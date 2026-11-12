@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '17'}
       - uses: android-actions/setup-android@v3
-      - run: npm install @capacitor/core @capacitor/cli @capacitor/android
+      - run: npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/filesystem @capacitor/share
       - run: npx cap add android || true
       - run: npx cap sync android
       - run: cd android && ./gradlew assembleDebug
