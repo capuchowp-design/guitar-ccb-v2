@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#10100e"><meta name="description" content="DigitaHinos FingerStyle — 480 hinos no violão: partitura, tablatura, acordes e fingerstyle.">
+<link rel="manifest" href="manifest.json"><link rel="icon" href="icons/favicon.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><title>DigitaHinos FingerStyle</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="brand">♫ DigitaHinos FingerStyle</div><button id="openHymns">Hinos</button><button id="uploadBtn" title="Abrir um arquivo .mxl / .musicxml seu">Enviar MXL</button><input type="file" id="fileIn" accept=".mxl,.musicxml,.xml" hidden><button id="installBtn">Instalar</button><button id="pixBtn">Pix</button><button id="proBtn">Pro</button></header>
+<main class="wrap">
+<div class="toolbar"><div style="min-width:0;flex:1"><div class="hymn-title" id="hymnTitle">Carregando…</div><div class="muted" id="hymnMeta">&nbsp;</div></div><span class="badge" id="keyBadge">Tom: —</span><span class="badge" id="capoBadge">Capo: —</span><button id="settingsBtn">⚙ Opções</button><button id="pdfBtn" title="Imprimir / salvar em PDF">PDF</button><button id="recordBtn">● Gravar</button></div>
+<section class="player"><button id="playBtn" aria-label="Tocar">▶</button><button id="stopBtn" aria-label="Parar">■</button><button id="restartBtn" aria-label="Início">↺</button><div class="progress-wrap"><input class="progress" id="progress" type="range" min="0" max="1000" value="0" aria-label="Posição"></div><div class="time" id="clock">00:00 / 00:00</div></section>
+<div class="status" id="status" aria-live="polite"></div>
+<section class="options" id="options"><div class="optgrid">
+<div class="opt wide"><label>Modo de execução</label><select id="mode">
+<optgroup label="Fingerstyle"><option value="full">Fingerstyle completo (solo + baixo + dedilhado)</option><option value="simple">Fingerstyle simples (solo + baixo/tônica)</option></optgroup>
+<optgroup label="Uma voz por vez"><option value="S">Soprano (1ª voz)</option><option value="A">Contralto (2ª voz)</option><option value="T">Tenor (3ª voz)</option><option value="B">Baixo (4ª voz)</option></optgroup>
+<optgroup label="Coral"><option value="satb">4 vozes juntas (adaptado ao violão)</option></optgroup></select></div>
+<div class="opt"><label>Violão</label><select id="guitar"><option value="nylon">Nylon (clássico)</option><option value="steel">Aço (folk)</option></select></div>
+<div class="opt"><label>Capotraste</label><select id="capoSel"><option value="auto">Automático</option><option value="0">Sem capo</option><option value="1">Casa 1</option><option value="2">Casa 2</option><option value="3">Casa 3</option><option value="4">Casa 4</option><option value="5">Casa 5</option><option value="6">Casa 6</option><option value="7">Casa 7</option></select></div>
+<div class="opt"><label>Tom / transposição</label><select id="transpose"><option value="0">Tom original</option><option value="-6">-6</option><option value="-5">-5</option><option value="-4">-4</option><option value="-3">-3</option><option value="-2">-2</option><option value="-1">-1</option><option value="1">+1</option><option value="2">+2</option><option value="3">+3</option><option value="4">+4</option><option value="5">+5</option><option value="6">+6</option></select></div>
+<div class="opt"><label>Velocidade</label><input id="speed" type="range" min="50" max="140" value="100"><small id="speedVal">100%</small></div>
+<div class="opt"><label>Volume</label><input id="volume" type="range" min="0" max="100" value="80"></div>
+<div class="opt"><label>Tela</label><select id="screenMode"><option value="both">Braço + partitura</option><option value="guitar">Só braço</option><option value="score">Só partitura/tablatura</option></select></div>
+<div class="opt"><label>Notação</label><select id="notationMode"><option value="both">Partitura + tablatura</option><option value="tab">Só tablatura</option></select></div>
+<div class="opt"><label>Letra</label><select id="lyrics"><option value="on">Mostrar</option><option value="off">Ocultar</option></select></div>
+<div class="opt"><label>Mão esquerda</label><select id="leftHand"><option value="on">Mostrar dedos</option><option value="off">Ocultar</option></select></div>
+<div class="opt"><label>Uso offline</label><button id="offlineBtn" type="button">Baixar os 480 hinos</button><small id="offlineMsg"></small></div>
+</div><p class="footnote">As posições respeitam o alcance da mão: no máximo 4 dedos, abertura de até 4 casas (3 no normal) e pestana só com o indicador. O capotraste automático escolhe a forma de acordes mais fácil sem mudar o tom que você ouve.</p></section>
+<div class="chordbar" id="chordBar"></div>
+<section class="layout" id="mainLayout">
+<div class="stage" id="guitarStage"><h3>Braço do violão • afinação E A D G B E</h3><div class="screen neck"><canvas id="fretboard"></canvas></div></div>
+<div class="stage" id="scoreStage"><h3 id="scoreHeading">Partitura e tablatura</h3><div class="screen staff" id="scoreWrap"><div id="scoreHost"></div></div><div class="footnote" id="scoreInfo"></div></div>
+</section>
+<div class="footer">DigitaHinos FingerStyle • som de violão gerado no aparelho por modelagem física (sem arquivos de áudio) • funciona offline</div>
+</main>
+<div class="modal" id="hymnModal"><div class="dialog"><div class="dialog-head"><h2>Selecionar hino</h2><button data-close="hymnModal">✕</button></div><input id="hymnSearch" placeholder="Buscar por número, título ou autor" autocomplete="off"><div class="hymnlist" id="hymnList"></div></div></div>
+<div class="modal" id="pixModal"><div class="dialog"><div class="dialog-head"><h2>Apoie o projeto</h2><button data-close="pixModal">✕</button></div><p>Chave Pix do desenvolvedor:</p><strong id="pixKey">SUA-CHAVE-PIX-AQUI</strong><p class="footnote">Edite PIX_KEY no início de js/app.js para inserir sua chave.</p><button id="copyPix">Copiar chave</button></div></div>
+<div class="modal" id="proModal"><div class="dialog"><div class="dialog-head"><h2>DigitaHinos Pro</h2><button data-close="proModal">✕</button></div><p>A transposição manual de tom é reservada ao Pro. O capotraste automático e todos os demais recursos são gratuitos.</p><input id="proCode" placeholder="Código de uso único"><button id="activatePro">Validar código</button><p id="proMsg" class="footnote"></p></div></div>
+<script src="pro-config.js"></script>
+<script src="js/xml.js"></script><script src="js/mxl.js"></script><script src="js/harmony.js"></script><script src="js/guitar.js"></script><script src="js/fingering.js"></script><script src="js/arrange.js"></script><script src="js/synth.js"></script><script src="js/render.js"></script><script src="js/fretboard.js"></script><script src="js/player.js"></script><script src="js/app.js"></script>
+</body></html>
