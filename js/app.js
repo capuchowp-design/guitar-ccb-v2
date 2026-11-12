@@ -5,7 +5,6 @@
   const $ = s => document.querySelector(s);
   const DH = window.DH; const mod = (a, n) => ((a % n) + n) % n;
   const st = { catalog: [], cur: null, sc: null, lines: null, har: null, arr: null, order: [], capoAuto: 0, lay: null, prevCol: -1, onEls: [], raf: 0, lastFrame: 0, busy: false };
-  let pro = localStorage.getItem('dh_pro') === '1';
   const player = new DH.Player(); const fb = new DH.Fretboard($('#fretboard'));
   const prefs = (() => { try { return JSON.parse(localStorage.getItem('dh_prefs') || '{}'); } catch (e) { return {}; } })();
   const savePrefs = () => { try { localStorage.setItem('dh_prefs', JSON.stringify(prefs)); } catch (e) { } };
@@ -48,7 +47,7 @@
 
   /* ---------- arranjo ---------- */
   function currentOpts() {
-    const tr = pro ? Number($('#transpose').value) : 0; const mode = $('#mode').value;
+    const tr = Number($('#transpose').value); const mode = $('#mode').value;
     let capo = $('#capoSel').value; const chords = st.har.chords.map(c => Object.assign({}, c, { root: mod(c.root + tr, 12) }));
     const mel = st.lines.S.map(x => x.p + tr);
     const auto = DH.harmony.chooseCapo(chords, Math.min(...mel), Math.max(...mel)).capo; st.capoAuto = auto;
@@ -122,9 +121,10 @@
   $('#speed').onchange = () => rebuild(false);
   $('#volume').oninput = e => player.setVolume(Number(e.target.value) / 100);
   ['mode', 'guitar', 'capoSel'].forEach(id => $('#' + id).addEventListener('change', () => { prefs[id] = $('#' + id).value; savePrefs(); rebuild(false); }));
-  $('#transpose').addEventListener('change', () => { if (!pro) { $('#transpose').value = '0'; $('#proModal').classList.add('show'); return; } rebuild(false); });
+  $('#transpose').addEventListener('change', () => rebuild(false));
   ['notationMode', 'lyrics'].forEach(id => $('#' + id).addEventListener('change', () => { prefs[id] = $('#' + id).value; savePrefs(); if (st.arr) { drawScoreAndChords(); frame(true); } }));
   $('#leftHand').addEventListener('change', () => frame(true));
+  $('#camMode').addEventListener('change', () => { prefs.camMode = $('#camMode').value; savePrefs(); fb.setCamMode($('#camMode').value); frame(true); });
   $('#screenMode').addEventListener('change', () => { const v = $('#screenMode').value; $('#guitarStage').classList.toggle('hidden', v === 'score'); $('#scoreStage').classList.toggle('hidden', v === 'guitar'); $('#chordBar').style.display = v === 'guitar' ? 'none' : ''; fb.resize(); if (st.arr) frame(true); });
   $('#openHymns').onclick = () => { $('#hymnModal').classList.add('show'); setTimeout(() => $('#hymnSearch').focus(), 50); };
   $('#hymnSearch').oninput = e => renderCatalog(e.target.value.trim());
@@ -134,9 +134,32 @@
   $('#pdfBtn').onclick = () => window.print();
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => $('#' + b.dataset.close).classList.remove('show'));
   $('#pixBtn').onclick = () => { $('#pixKey').textContent = PIX_KEY; $('#pixModal').classList.add('show'); }; $('#copyPix').onclick = () => navigator.clipboard && navigator.clipboard.writeText(PIX_KEY);
-  $('#proBtn').onclick = () => $('#proModal').classList.add('show');
-  function getDeviceId() { let id = localStorage.getItem('dh_device'); if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)); localStorage.setItem('dh_device', id); } return id; }
-  $('#activatePro').onclick = async () => { const code = $('#proCode').value.trim(); if (!code) return; try { const url = window.PRO_CONFIG && window.PRO_CONFIG.endpoint; if (!url) throw new Error('Endpoint não configurado em pro-config.js'); const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, deviceId: getDeviceId() }) }); const j = await r.json(); if (j.ok) { pro = true; localStorage.setItem('dh_pro', '1'); $('#proMsg').textContent = 'Pro ativado neste aparelho.'; } else throw new Error(j.message || 'Código inválido'); } catch (e) { $('#proMsg').textContent = e.message; } };
+  /* ---------- exportar áudio (.wav) ---------- */
+  let wavUrl = null;
+  $('#wavBtn').onclick = async () => {
+    if (!st.arr || st.busy) return; const b = $('#wavBtn'); const old = b.textContent; b.disabled = true; pause();
+    try {
+      player.init(); player.setVolume(Number($('#volume').value) / 100); b.textContent = 'Gerando…'; status('Gerando o áudio WAV (mesmo tom, andamento, violão e volume que você ouve)…'); await new Promise(r => setTimeout(r, 40));
+      const buf = await player.renderOffline(); const blob = DH.Player.toWav(buf);
+      const slug = norm(st.cur ? st.cur.title : 'partitura').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+      const name = (st.cur && st.cur.n ? 'hino-' + String(st.cur.n).padStart(3, '0') + '-' : '') + slug + '.wav';
+      if (wavUrl) URL.revokeObjectURL(wavUrl); wavUrl = URL.createObjectURL(blob);
+      const a = $('#wavLink'); a.href = wavUrl; a.download = name; $('#wavAudio').src = wavUrl;
+      $('#wavInfo').textContent = name + ' • ' + fmt(blob.size / (44100 * 4)) + ' • ' + (blob.size / 1048576).toFixed(1) + ' MB • ' + ($('#guitar').value === 'steel' ? 'aço' : 'nylon') + (st.arr.capo ? ' • capo ' + st.arr.capo : '');
+      $('#wavModal').classList.add('show'); status('Áudio WAV gerado.');
+      const cap = window.Capacitor, nat = cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins;
+      if (nat && nat.Filesystem) {   // app Android (APK): salva no cache e abre o menu de compartilhar/salvar
+        try {
+          const data = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = no; fr.readAsDataURL(blob); });
+          const r = await nat.Filesystem.writeFile({ path: name, data, directory: 'CACHE' });
+          if (nat.Share) await nat.Share.share({ title: name, url: r.uri, dialogTitle: 'Salvar ou compartilhar o áudio' });
+        } catch (e) { console.warn(e); a.click(); }
+      } else a.click();
+    } catch (e) { console.error(e); status('Não foi possível gerar o WAV: ' + e.message); }
+    b.textContent = old; b.disabled = false;
+  };
+  $('#wavModal').addEventListener('click', e => { if (e.target.id === 'wavModal') { $('#wavAudio').pause(); } });
+  document.querySelectorAll('[data-close="wavModal"]').forEach(x => x.addEventListener('click', () => $('#wavAudio').pause()));
   let deferred = null; window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; });
   $('#installBtn').onclick = async () => { if (deferred) { deferred.prompt(); await deferred.userChoice; deferred = null; } else alert('Use o menu do navegador “Instalar aplicativo” ou “Adicionar à tela inicial”.'); };
   let mr = null, chunks = [];
@@ -156,6 +179,7 @@
 
   // restaura preferências
   ['mode', 'guitar', 'capoSel', 'notationMode', 'lyrics'].forEach(id => { if (prefs[id]) $('#' + id).value = prefs[id]; });
+  $('#camMode').value = prefs.camMode || (window.innerWidth < 700 ? 'follow' : 'full'); fb.setCamMode($('#camMode').value);
   window.__dh = { st, player, fb, openHymn, rebuild };
   loadCatalog().then(() => openHymn(prefs.last || 1));
   if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(console.warn));

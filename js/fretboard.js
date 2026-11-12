@@ -1,69 +1,76 @@
-/* DigitaHinos — braço do violão realista (canvas): escala real das casas, cordas que vibram,
- * dedos que se movem com suavidade, janela de casas que acompanha a mão, capotraste, pestana. */
+/* DigitaHinos — violão folk animado (canvas).
+ * Visto de frente para quem toca: corpo à esquerda, braço à direita, corda Mi grave (6ª) em cima.
+ * Escala real das casas (650 mm), cordas que vibram, dedos da mão esquerda (1-4) descendo sobre o braço,
+ * dedos da mão direita (p-i-m-a) que palhetam, capotraste e câmera (violão inteiro ou seguindo a mão). */
 (function (G) {
   'use strict';
   const DH = (G.DH = G.DH || {});
   const NAMES = ['Dó', 'Dó♯', 'Ré', 'Mi♭', 'Mi', 'Fá', 'Fá♯', 'Sol', 'Lá♭', 'Lá', 'Si♭', 'Si'];
-  const OPEN = [64, 59, 55, 50, 45, 40];
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-  const fretPos = n => 1 - Math.pow(2, -n / 12);            // posição normalizada (0 = pestana, 1 ≈ ponte virtual)
-  function rng(seed) { let s = seed; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; }
+  const now_s = () => (G.performance ? G.performance.now() : Date.now()) / 1000;
+
+  /* ---- geometria (mm). d = distância à pestana (nut); x do mundo = -d (corpo à esquerda) ---- */
+  const SL = 650;
+  const D = n => SL * (1 - Math.pow(2, -n / 12));          // posição da casa n
+  const sh = d => 17.5 + 9.5 * d / SL;                      // meia-abertura entre as cordas
+  const SY = (si, d) => sh(d) * (1 - 2 * si / 5);           // y da corda si (5 = Mi grave, em cima)
+  const fbh = d => sh(d) + 5.4;                             // meia-largura do espelho
+  const ANG = -0.125;                                       // inclinação (cabeça sobe, como ao tocar)
+  const BRIDGE_D = SL, HOLE_D = 487, HOLE_R = 52, END_D = 830;
+  const BODY = [[352, -29], [372, -50], [405, -95], [445, -133], [490, -147], [530, -139], [562, -124], [600, -137], [650, -170], [720, -195], [772, -186], [806, -150], [824, -92], [830, 0],
+    [824, 92], [806, 150], [772, 186], [720, 195], [650, 170], [600, 137], [562, 126], [535, 127], [506, 121], [478, 106], [450, 84], [420, 66], [392, 50], [368, 38], [352, 29]];
+  const RH_D = [572, 586, 600, 614], RH_NAME = ['p', 'i', 'm', 'a'], RH_REST = [3, 2, 1, 0];
+  const GOLD = '#d8c18c', CREAM = '#efe6cc';
+
+  function spline(x, P, k) {            // Catmull-Rom → Bézier, em coordenadas (d,y) mapeadas para o mundo (-d,y)
+    const pt = i => { const p = P[clamp(i, 0, P.length - 1)]; return [-(p[0] * k[0] + k[2]), p[1] * k[1]]; };
+    let a = pt(0); x.moveTo(a[0], a[1]);
+    for (let i = 0; i < P.length - 1; i++) { const p0 = pt(i - 1), p1 = pt(i), p2 = pt(i + 1), p3 = pt(i + 2); x.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6, p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]); }
+  }
 
   class Fretboard {
     constructor(canvas) {
-      this.c = canvas; this.x = canvas.getContext('2d'); this.notes = []; this.type = 'nylon'; this.capo = 0;
-      this.view = 0; this.viewT = 0; this.span = 6.6;
-      this.fing = [1, 2, 3, 4].map(() => ({ s: 2, f: 3, a: 0, tx: 0, ty: 0, px: null, py: null, on: false }));
-      this.str = [0, 0, 0, 0, 0, 0].map(() => ({ amp: 0, t0: -9, freq: 6 }));
-      this.last = -1; this.bg = null; this.info = ''; this.spb = 1; this._tex = null; this.now = 0; this.idx = 0;
+      this.c = canvas; this.x = canvas.getContext('2d'); this.notes = []; this.type = 'nylon'; this.capo = 0; this.camMode = 'full';
+      this.fing = [1, 2, 3, 4].map(() => ({ s: 2, f: 3, a: 0, px: null, py: null, on: false }));
+      this.str = [0, 0, 0, 0, 0, 0].map(() => ({ amp: 0, rt0: 0, freq: 9 }));
+      this.rh = RH_NAME.map((n, k) => ({ s: RH_REST[k], y: null, rt0: -9, pulse: 0 }));
+      this.last = -1; this.spb = 1; this.now = 0; this.idx = 0; this.cam = null; this.reg = null;
       this.resize();
     }
     resize() {
       const r = this.c.getBoundingClientRect(); const dpr = Math.min(2, G.devicePixelRatio || 1);
       const w = Math.max(320, Math.round(r.width || 1000)), h = Math.max(180, Math.round(r.height || 420));
-      this.c.width = w * dpr; this.c.height = h * dpr; this.W = w; this.H = h; this.dpr = dpr; this._tex = null;
+      this.c.width = w * dpr; this.c.height = h * dpr; this.W = w; this.H = h; this.dpr = dpr; this.cam = null;
     }
+    setCamMode(m) { this.camMode = m === 'follow' ? 'follow' : 'full'; this.cam = null; }
     setNotes(notes, opts) { this.notes = notes.slice().sort((a, b) => a.t - b.t); this.type = opts.type; this.capo = opts.capo || 0; this.idx = 0; this.reset(); }
-    reset() { this.fing.forEach(f => { f.a = 0; f.on = false; f.px = null; }); this.str.forEach(s => { s.amp = 0; }); this.view = this.viewT = 0; }
-    /* geometria */
-    geo() {
-      const W = this.W, H = this.H; const L = 28, R = W - 18; const topY = H * 0.17, botY = H * 0.80;
-      const f0 = this.view, f1 = this.view + this.span; const p0 = fretPos(f0), p1 = fretPos(f1);
-      const X = f => L + (fretPos(f) - p0) / (p1 - p0) * (R - L);
-      // espaçamento entre cordas cresce em direção ao corpo
-      const spacing = f => { const u = clamp(fretPos(f), 0, 1); const w = (botY - topY) * (0.86 + 0.34 * u); return w / 5; };
-      const Y = (si, f) => (topY + botY) / 2 + (si - 2.5) * spacing(f) * 1.0;
-      return { L, R, topY, botY, X, Y, W, H, spacing };
+    reset() { this.fing.forEach(f => { f.a = 0; f.on = false; f.px = null; }); this.str.forEach(s => { s.amp = 0; }); this.rh.forEach(r => { r.pulse = 0; }); this.reg = null; this.cam = null; }
+    pluck(s, t, vel) {
+      const st = this.str[s]; st.amp = Math.min(1, .55 + vel * .7); st.rt0 = now_s(); st.freq = 8 + (5 - s) * .5;
+      const k = s >= 3 ? 0 : s === 2 ? 1 : s === 1 ? 2 : 3; const r = this.rh[k]; r.s = s; r.rt0 = now_s();
     }
-    texture(g) {
-      if (this._tex && this._tex.w === this.W) return this._tex.c;
-      const c = document.createElement('canvas'); c.width = this.W; c.height = this.H; const x = c.getContext('2d'); const r = rng(7);
-      // madeira escura (jacarandá / escala de ébano) com veios
-      const gr = x.createLinearGradient(0, 0, 0, this.H); gr.addColorStop(0, '#3a2216'); gr.addColorStop(.5, '#4a2c1b'); gr.addColorStop(1, '#2f1a10');
-      x.fillStyle = gr; x.fillRect(0, 0, this.W, this.H);
-      for (let i = 0; i < 260; i++) { const y = r() * this.H; x.strokeStyle = `rgba(${r() > .5 ? '20,10,5' : '110,70,45'},${0.05 + r() * .12})`; x.lineWidth = .5 + r() * 1.6; x.beginPath(); x.moveTo(0, y); let yy = y; for (let k = 0; k <= 12; k++) { yy += (r() - .5) * 3; x.lineTo(k * this.W / 12, yy); } x.stroke(); }
-      for (let i = 0; i < 1400; i++) { x.fillStyle = `rgba(0,0,0,${r() * .12})`; x.fillRect(r() * this.W, r() * this.H, 1 + r() * 2, 1); }
-      this._tex = { w: this.W, c }; return c;
+    /* câmera */
+    fullCam() { const s = Math.min(this.W * .96 / 1075, this.H * .95 / 545); return { cx: -318, cy: 22, s }; }
+    camTarget() {
+      const full = this.fullCam(); if (this.camMode !== 'follow') return full;
+      const reg = this.reg || { lo: 1, hi: 5 }; const dLo = D(Math.max(0, reg.lo - 1.3)), dHi = D(reg.hi + .9);
+      const minVW = this.W < 600 ? 230 : 400; const vw = Math.max(minVW, (dHi - dLo) * 1.3 + 70);
+      return { cx: -(dLo + dHi) / 2, cy: -22, s: clamp(this.W / vw, full.s, 5.2) };
     }
-    pluck(s, t, vel) { const st = this.str[s]; st.amp = Math.min(1, .55 + vel * .7); st.t0 = t; st.freq = 5 + s * .6; }
     update(now, dt, spb) {
       this.spb = spb || 1; const N = this.notes;
-      // dispara palhetadas
       while (this.idx < N.length && N[this.idx].t <= now + 1e-6) { const n = N[this.idx++]; if (now - n.t < 0.6) this.pluck(n.s, now, n.role === 'melody' || n.role === 'solo' ? .9 : .55); }
-      // notas ativas (dedos)
       const act = []; const lead = 0.14 / Math.max(.2, this.spb);
       for (const n of N) { if (n.t > now + 0.6) break; if (n.f > 0 && now >= n.t - lead && now < n.t + Math.max(n.hold, .3)) act.push(n); }
-      const key = act.map(n => n.id).join(',');
-      // dedos alvo
       const used = new Set();
-      act.forEach(n => { const k = n.fin - 1; if (k < 0 || k > 3) return; const f = this.fing[k]; if (used.has(k)) return; used.add(k); f.s = n.s; f.f = n.f; f.on = true; f.pressedAt = now; });
+      act.forEach(n => { const k = n.fin - 1; if (k < 0 || k > 3) return; const f = this.fing[k]; if (used.has(k)) return; used.add(k); f.s = n.s; f.f = n.f; f.on = true; });
       this.fing.forEach((f, k) => { if (!used.has(k)) f.on = false; });
-      // próxima janela: média das próximas posições
-      let lo = 99, hi = 0; let cnt = 0;
-      for (const n of N) { if (n.t < now - 0.3) continue; if (n.t > now + 2.2 / Math.max(.4, this.spb)) break; if (n.f > 0) { lo = Math.min(lo, n.f); hi = Math.max(hi, n.f); cnt++; } }
-      if (cnt) { const target = clamp(Math.min(lo - 0.9, hi - this.span + 2.2), 0, 13); this.viewT = target; }
-      else if (!act.length) this.viewT = Math.max(0, this.viewT * 0.98);
-      const k = 1 - Math.exp(-dt * 4.2); this.view += (this.viewT - this.view) * k;
+      // região de casas das próximas notas (para a câmera de zoom)
+      let lo = 99, hi = 0, cnt = 0;
+      for (const n of N) { if (n.t < now - 0.3) continue; if (n.t > now + 2.2 / Math.max(.4, this.spb)) break; if (n.f > 0) { lo = Math.min(lo, this.capo + n.f); hi = Math.max(hi, this.capo + n.f); cnt++; } }
+      if (cnt) this.reg = { lo, hi }; else if (!act.length && this.reg) this.reg = { lo: Math.max(1, this.reg.lo * .98), hi: Math.max(this.reg.lo + 3, this.reg.hi * .98) };
+      const tg = this.camTarget(); if (!this.cam) this.cam = Object.assign({}, tg); const k = 1 - Math.exp(-dt * 3.6);
+      this.cam.cx += (tg.cx - this.cam.cx) * k; this.cam.cy += (tg.cy - this.cam.cy) * k; this.cam.s += (tg.s - this.cam.s) * k;
       this.fing.forEach(f => { f.a += ((f.on ? 1 : 0) - f.a) * (1 - Math.exp(-dt * (f.on ? 22 : 11))); });
       this.str.forEach(s => { s.amp *= Math.exp(-dt * 2.4); });
       this.now = now; this.act = act;
@@ -71,76 +78,101 @@
       const last = [...N].reverse().find(n => n.t <= now + 1e-6 && (n.role === 'melody' || n.role === 'solo'));
       this.cur = last || top; this.draw(now);
     }
-    draw(now) {
-      const x = this.x, dpr = this.dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); const g = this.geo(); const { L, R, topY, botY, X, Y, W, H } = g;
-      x.clearRect(0, 0, W, H); x.fillStyle = '#17110c'; x.fillRect(0, 0, W, H);
-      // corpo do braço (trapézio)
-      const nutVisible = this.view < 0.2; const yTopAt = f => Y(0, f) - g.spacing(f) * .9, yBotAt = f => Y(5, f) + g.spacing(f) * .9;
-      x.save(); x.beginPath(); x.moveTo(L - 20, yTopAt(this.view) - 2); x.lineTo(R + 10, yTopAt(this.view + this.span) - 2); x.lineTo(R + 10, yBotAt(this.view + this.span) + 2); x.lineTo(L - 20, yBotAt(this.view) + 2); x.closePath(); x.clip();
-      x.drawImage(this.texture(g), 0, 0, W, H);
-      // sombra superior/inferior para volume
-      const sh = x.createLinearGradient(0, 0, 0, H); sh.addColorStop(0, 'rgba(0,0,0,.5)'); sh.addColorStop(.18, 'rgba(0,0,0,0)'); sh.addColorStop(.82, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.55)'); x.fillStyle = sh; x.fillRect(0, 0, W, H);
+    /* ---------- desenho ---------- */
+    drawBody(x, s) {
+      // corpo
+      const bg = x.createLinearGradient(0, -200, 0, 200); bg.addColorStop(0, '#1d1c19'); bg.addColorStop(.5, '#151412'); bg.addColorStop(1, '#0c0c0b');
+      x.beginPath(); spline(x, BODY, [1, 1, 0]); x.closePath(); x.fillStyle = bg; x.fill();
+      x.lineJoin = 'round'; x.strokeStyle = GOLD; x.lineWidth = 2.6; x.stroke();
+      x.beginPath(); spline(x, BODY.map(p => [(p[0] - 590) * .955 + 590, p[1] * .93]), [1, 1, 0]); x.closePath(); x.strokeStyle = 'rgba(216,193,140,.55)'; x.lineWidth = 1; x.stroke();
+      // boca e roseta
+      const hx = -HOLE_D; x.beginPath(); x.arc(hx, 0, HOLE_R, 0, 7); x.fillStyle = '#030303'; x.fill();
+      x.strokeStyle = GOLD; x.lineWidth = 2.4; x.stroke();
+      x.beginPath(); x.arc(hx, 0, HOLE_R + 7, 0, 7); x.lineWidth = 1; x.strokeStyle = 'rgba(216,193,140,.8)'; x.stroke();
+      x.beginPath(); x.arc(hx, 0, HOLE_R + 11, 0, 7); x.lineWidth = .7; x.strokeStyle = 'rgba(216,193,140,.5)'; x.stroke();
+      // cavalete
+      const bx = -BRIDGE_D; x.beginPath(); x.moveTo(bx + 15, -72); x.lineTo(bx - 15, -76); x.quadraticCurveTo(bx - 20, 0, bx - 15, 76); x.lineTo(bx + 15, 72); x.quadraticCurveTo(bx + 20, 0, bx + 15, -72); x.closePath();
+      x.fillStyle = '#1f1a14'; x.fill(); x.lineWidth = 1.2; x.strokeStyle = GOLD; x.stroke();
+      x.fillStyle = CREAM; x.fillRect(bx - .9, SY(5, BRIDGE_D) - 4, 1.8, SY(0, BRIDGE_D) - SY(5, BRIDGE_D) + 8);
+      for (let i = 0; i < 6; i++) { x.beginPath(); x.arc(bx - 9, SY(i, BRIDGE_D), 2.1, 0, 7); x.fillStyle = CREAM; x.fill(); }
+    }
+    drawNeck(x, s) {
+      // cabeça
+      const hh = t => 31 + 6 * Math.min(1, t / 150);
+      x.beginPath(); x.moveTo(0, -hh(0)); x.lineTo(158, -hh(158)); x.bezierCurveTo(182, -hh(170), 196, -22, 196, 0); x.bezierCurveTo(196, 22, 182, hh(170), 158, hh(158)); x.lineTo(0, hh(0)); x.closePath();
+      const hg = x.createLinearGradient(0, -40, 0, 40); hg.addColorStop(0, '#1c1b18'); hg.addColorStop(1, '#0d0d0c'); x.fillStyle = hg; x.fill(); x.lineWidth = 2.2; x.strokeStyle = GOLD; x.stroke();
+      // braço (madeira) e espelho
+      const L = 462; x.beginPath(); x.moveTo(0, -fbh(0) - 2); for (let d = 0; d <= L; d += 20) x.lineTo(-d, -fbh(d) - 2); for (let d = L; d >= 0; d -= 20) x.lineTo(-d, fbh(d) + 2); x.closePath(); x.fillStyle = '#12110f'; x.fill();
+      x.beginPath(); x.moveTo(0, -fbh(0)); for (let d = 0; d <= L; d += 20) x.lineTo(-d, -fbh(d)); for (let d = L; d >= 0; d -= 20) x.lineTo(-d, fbh(d)); x.closePath(); x.fillStyle = '#070706'; x.fill();
+      x.lineWidth = 1.5; x.strokeStyle = GOLD; x.stroke();
       // marcadores
-      const f0 = Math.floor(this.view), f1 = Math.ceil(this.view + this.span) + 1;
-      for (const m of [3, 5, 7, 9, 12, 15, 17, 19, 21]) {
-        if (m < f0 || m > f1) continue; const cx = (X(m - 1) + X(m)) / 2; const my = (Y(0, m) + Y(5, m)) / 2; const spc = g.spacing(m);
-        const dots = m === 12 ? [-1, 1] : [0]; dots.forEach(d => { const rg = x.createRadialGradient(cx - 2, my + d * spc * 1.3 - 2, 1, cx, my + d * spc * 1.3, spc * .42); rg.addColorStop(0, '#f7f0dc'); rg.addColorStop(1, '#b9ae92'); x.fillStyle = rg; x.beginPath(); x.arc(cx, my + d * spc * 1.3, spc * .36, 0, 7); x.fill(); });
-      }
-      // casas (trastes) metálicos
-      for (let f = Math.max(0, f0); f <= f1; f++) {
-        if (f === 0 && nutVisible) { const xx = X(0); const gr = x.createLinearGradient(xx - 8, 0, xx + 6, 0); gr.addColorStop(0, '#d8cfb6'); gr.addColorStop(1, '#8f866f'); x.fillStyle = gr; x.fillRect(xx - 7, yTopAt(0) - 4, 10, yBotAt(0) - yTopAt(0) + 8); continue; }
-        const xx = X(f); if (xx < L - 22 || xx > R + 12) continue; const a = yTopAt(f) - 1, b = yBotAt(f) + 1;
-        x.fillStyle = 'rgba(0,0,0,.45)'; x.fillRect(xx + 1.5, a, 3.5, b - a);
-        const gr = x.createLinearGradient(xx - 2.2, 0, xx + 2.2, 0); gr.addColorStop(0, '#9a9a94'); gr.addColorStop(.45, '#f4f2ea'); gr.addColorStop(1, '#85857f'); x.fillStyle = gr; x.fillRect(xx - 2.2, a, 4.4, b - a);
-      }
-      x.restore();
-      // números das casas
-      x.fillStyle = '#cdb98f'; x.font = '600 14px system-ui,sans-serif'; x.textAlign = 'center';
-      for (let f = Math.max(1, f0); f <= f1; f++) { const cx = (X(f - 1) + X(f)) / 2; if (cx > L && cx < R) x.fillText(String(f), cx, H - 10); }
-      // capotraste (se houver) — barra sobre a pestana
-      if (this.capo > 0 && nutVisible) { const xx = X(0) - 6; const gr = x.createLinearGradient(xx - 7, 0, xx + 7, 0); gr.addColorStop(0, '#3b3b3b'); gr.addColorStop(.5, '#8d8d8d'); gr.addColorStop(1, '#2a2a2a'); x.fillStyle = gr; x.beginPath(); x.roundRect ? x.roundRect(xx - 8, yTopAt(0) - 12, 16, yBotAt(0) - yTopAt(0) + 24, 6) : x.rect(xx - 8, yTopAt(0) - 12, 16, yBotAt(0) - yTopAt(0) + 24); x.fill(); x.fillStyle = '#e8d9b0'; x.font = '700 12px system-ui'; x.save(); x.translate(xx + 1, (yTopAt(0) + yBotAt(0)) / 2); x.rotate(-Math.PI / 2); x.fillText('CAPO ' + this.capo, 0, 4); x.restore(); }
+      x.fillStyle = 'rgba(232,218,178,.85)';
+      for (const m of [3, 5, 7, 9, 12, 15, 17, 19]) { const cd = (D(m - 1) + D(m)) / 2; (m === 12 ? [-8, 8] : [0]).forEach(o => { x.beginPath(); x.arc(-cd, o * (1 + cd / SL * .3), 3.3, 0, 7); x.fill(); }); }
+      // trastes e pestana
+      for (let n = 1; n <= 20; n++) { const d = D(n); x.fillStyle = 'rgba(0,0,0,.5)'; x.fillRect(-d - .5, -fbh(d), 2.4, 2 * fbh(d)); x.fillStyle = 'rgba(239,230,204,.82)'; x.fillRect(-d - 1, -fbh(d), 1.6, 2 * fbh(d)); }
+      x.fillStyle = '#efe6cc'; x.fillRect(-1.2, -fbh(0) - 1, 3.4, 2 * fbh(0) + 2);
+      // tarraxas
+      const col = [[5, 0], [4, 1], [3, 2], [2, 2], [1, 1], [0, 0]];
+      for (const [si, k] of col) { const top = si >= 3; const px = 40 + k * 42, py = (top ? -1 : 1) * (hh(px) - 7); x.beginPath(); x.arc(px, py, 3.2, 0, 7); x.fillStyle = CREAM; x.fill(); x.beginPath(); x.ellipse(px + 1, py + (top ? -9 : 9), 8, 5.4, 0, 0, 7); x.fillStyle = '#3b3326'; x.fill(); x.strokeStyle = GOLD; x.lineWidth = 1.2; x.stroke(); }
+    }
+    draw(now) {
+      const x = this.x, dpr = this.dpr, W = this.W, H = this.H; x.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const bgr = x.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, Math.max(W, H) * .75); bgr.addColorStop(0, '#171512'); bgr.addColorStop(1, '#080807'); x.fillStyle = bgr; x.fillRect(0, 0, W, H);
+      const cam = this.cam || this.fullCam(); const s = cam.s; const nylon = this.type === 'nylon'; const capo = this.capo, rt = now_s();
+      x.save(); x.translate(W / 2, H / 2); x.scale(s, s); x.rotate(ANG); x.translate(-cam.cx, -cam.cy);
+      this.drawBody(x, s); this.drawNeck(x, s);
+      // números das casas (relativos ao capotraste, como na "casa" da legenda)
+      x.font = `600 ${(12 / s).toFixed(2)}px system-ui,sans-serif`; x.textAlign = 'center'; x.fillStyle = 'rgba(216,193,140,.9)';
+      for (let n = capo + 1; n <= 19; n++) { const cd = (D(n - 1) + D(n)) / 2; const gap = (D(n) - D(n - 1)) * s; const step = gap < 17 ? 2 : 1; if ((n - capo) % step) continue; x.fillText(String(n - capo), -cd, fbh(cd) + 15 / s + 1); }
       // cordas
-      const nylon = this.type === 'nylon';
-      const sw = [1.3, 1.8, 2.5, 3.2, 3.9, 4.7].map(w => w * (nylon ? 1 : .92));
+      const px = v => v / s; const base = [1.5, 1.8, 2.2, 2.7, 3.2, 3.7].map(w => w * (nylon ? 1 : .9)); const wk = .8 + .2 * clamp(s / 1.2, .5, 1.8);
       for (let si = 0; si < 6; si++) {
-        const st = this.str[si]; const pressed = this.fing.find(f => f.a > .5 && f.s === si); const fr = pressed ? pressed.f : 0;
-        const xa = fr > 0 ? (X(fr) + X(fr - 1)) / 2 + (X(fr) - X(fr - 1)) * .12 : X(0) - 4; const xb = R + 14;
-        const wound = si >= 3; const w = sw[si];
-        const col = nylon ? (wound ? ['#d6d6cf', '#8e8e88'] : ['#efe9d6', '#b9b39e']) : (wound ? ['#d9a64f', '#7a5522'] : ['#e8e8e8', '#8d8d8d']);
-        const amp = st.amp * (nylon ? 3.6 : 3.0) * (1 - si * .06); const ph = (now - st.t0) * st.freq * 6.2832 * (1 / Math.max(.4, this.spb)) * 2.2;
-        const pts = 36; const pathLine = (dy, lw, style) => { x.beginPath(); for (let i = 0; i <= pts; i++) { const u = i / pts; const xx = xa + (xb - xa) * u; const yy = Y(si, this.view + this.span * (xx - L) / (R - L) * 0.0 + (fr > 0 ? fr : 0) + (xx - xa) / (R - L) * this.span) + dy + Math.sin(Math.PI * u) * Math.sin(ph) * amp; if (i) x.lineTo(xx, yy); else x.moveTo(xx, yy); } x.lineWidth = lw; x.strokeStyle = style; x.stroke(); };
-        // sombra projetada na madeira
-        pathLine(w * 1.4, w * 1.4, 'rgba(0,0,0,.35)');
-        // parte morta (entre pestana e casa pressionada) mais fraca
-        if (fr > 0) { x.beginPath(); x.moveTo(X(0), Y(si, 0)); x.lineTo(xa, Y(si, fr)); x.lineWidth = w; x.strokeStyle = 'rgba(200,200,190,.35)'; x.stroke(); }
-        const gr = x.createLinearGradient(0, Y(si, 3) - w, 0, Y(si, 3) + w); gr.addColorStop(0, col[0]); gr.addColorStop(1, col[1]);
-        pathLine(0, w, gr);
-        if (wound) { x.save(); x.setLineDash([1.2, 1.6]); pathLine(0, w * .95, 'rgba(0,0,0,.35)'); x.restore(); }
-        if (st.amp > .08) { x.globalAlpha = Math.min(.5, st.amp * .5); pathLine(0, w * 2.4, nylon ? 'rgba(255,240,200,.35)' : 'rgba(255,220,150,.35)'); x.globalAlpha = 1; }
+        const st = this.str[si]; const pr = this.fing.find(f => f.a > .5 && f.s === si); const fr = pr ? pr.f : 0; const w = px(base[si] * wk);
+        const dStart = fr > 0 ? D(capo + fr) : (capo > 0 ? D(capo) - 3 : 0); const wound = si >= 3;
+        const c0 = nylon ? (wound ? '#d4d4cc' : '#f1ead6') : (wound ? '#dcaa55' : '#ececec'), c1 = nylon ? (wound ? '#8e8e88' : '#bdb7a2') : (wound ? '#7a5522' : '#8d8d8d');
+        const amp = st.amp * (nylon ? 4.2 : 3.4) * (1 - si * .05); const ph = (rt - st.rt0) * st.freq * 6.2832;
+        const path = (dy, lw, style, dash) => { x.beginPath(); const n = 40; for (let i = 0; i <= n; i++) { const u = i / n; const d = dStart + (BRIDGE_D - dStart) * u; const y = SY(si, d) + dy + Math.sin(Math.PI * u) * Math.sin(ph) * amp; if (i) x.lineTo(-d, y); else x.moveTo(-d, y); } x.lineWidth = lw; x.strokeStyle = style; x.stroke(); };
+        // trecho morto (pestana/capo → dedo) e trecho até a tarraxa
+        x.lineCap = 'round'; const hd = 40 + (si >= 3 ? 5 - si : si) * 42 + 0; const postX = si >= 3 ? 40 + (5 - si) * 42 : 40 + si * 42; const postY = (si >= 3 ? -1 : 1) * (31 + 6 * Math.min(1, postX / 150) - 7);
+        x.beginPath(); x.moveTo(postX, postY); x.lineTo(0, SY(si, 0)); x.lineWidth = w * .8; x.strokeStyle = 'rgba(210,205,190,.55)'; x.stroke();
+        if (dStart > 0) { x.beginPath(); x.moveTo(0, SY(si, 0)); x.lineTo(-dStart, SY(si, dStart)); x.lineWidth = w * .8; x.strokeStyle = 'rgba(200,196,182,.35)'; x.stroke(); }
+        path(w * .9, w * 1.2, 'rgba(0,0,0,.45)');
+        const gr = x.createLinearGradient(0, -30, 0, 30); gr.addColorStop(0, c0); gr.addColorStop(1, c1); path(0, w, gr);
+        if (wound) { x.save(); x.setLineDash([px(1.2), px(1.6)]); path(0, w * .9, 'rgba(0,0,0,.35)'); x.restore(); }
+        if (st.amp > .08) { x.globalAlpha = Math.min(.5, st.amp * .5); path(0, w * 2.6, nylon ? 'rgba(255,240,200,.4)' : 'rgba(255,225,160,.4)'); x.globalAlpha = 1; }
       }
-      // dedos
-      const rad = f => g.spacing(f) * .56;
+      // capotraste
+      if (capo > 0) {
+        const d = D(capo) - 4.5, h = fbh(d) + 8; const g = x.createLinearGradient(-d - 8, 0, -d + 8, 0); g.addColorStop(0, '#2b2b2b'); g.addColorStop(.5, '#9a9a9a'); g.addColorStop(1, '#2b2b2b');
+        x.fillStyle = g; x.beginPath(); x.roundRect ? x.roundRect(-d - 7, -h, 14, 2 * h, 5) : x.rect(-d - 7, -h, 14, 2 * h); x.fill();
+        x.save(); x.translate(-d, -h - 6 / s); x.fillStyle = '#e8d9b0'; x.font = `700 ${(12 / s).toFixed(2)}px system-ui,sans-serif`; x.fillText('CAPO ' + capo, 0, 0); x.restore();
+      }
+      // mão direita (p i m a)
+      for (let k = 0; k < 4; k++) {
+        const r = this.rh[k], d = RH_D[k]; const ts = (rt - r.rt0); const dip = ts >= 0 && ts < .26 ? Math.sin(Math.PI * Math.min(1, ts / .26)) : 0;
+        const ty = SY(r.s, d) - 22 + dip * 20; if (r.y === null) r.y = ty; r.y += (ty - r.y) * .35;
+        this.finger(x, -d, r.y, k, .0 + .12, 5.3, '#d9a17a', RH_NAME[k], 1, s, true);
+      }
+      // mão esquerda (1 2 3 4)
       this.fing.forEach((f, k) => {
-        if (f.a < .02) return; const xx = (X(f.f) + X(f.f - 1)) / 2 + (X(f.f) - X(f.f - 1)) * .12; const yy = Y(f.s, f.f); const r = rad(f.f);
-        if (f.px === null) { f.px = xx; f.py = yy + 60; }
-        const sm = 1 - Math.exp(-.2); f.px += (xx - f.px) * (f.on ? .35 : .1); f.py += (yy - f.py) * (f.on ? .4 : .1); const lift = (1 - f.a) * 26;
-        const px = f.px, py = f.py + lift; const ang = -0.28 + k * 0.06;
-        x.save(); x.globalAlpha = Math.min(1, f.a * 1.05);
-        // corpo do dedo vindo de baixo (mão fica fora da tela)
-        const len = this.H - py + 40; const bx = px - Math.tan(ang) * len * .35;
-        const gr = x.createLinearGradient(px - r, 0, px + r, 0); gr.addColorStop(0, '#c08a63'); gr.addColorStop(.5, '#e7b992'); gr.addColorStop(1, '#a8714d');
-        x.fillStyle = gr; x.beginPath(); x.moveTo(px - r * .95, py); x.lineTo(bx - r * 1.12, this.H + 10); x.lineTo(bx + r * 1.12, this.H + 10); x.lineTo(px + r * .95, py); x.arc(px, py, r * .95, 0, Math.PI, true); x.fill();
-        // ponta
-        const rg = x.createRadialGradient(px - r * .25, py - r * .3, r * .1, px, py, r); rg.addColorStop(0, '#f3cfae'); rg.addColorStop(1, '#c98f68'); x.fillStyle = rg; x.beginPath(); x.ellipse(px, py, r * .95, r * .82, 0, 0, 7); x.fill();
-        x.strokeStyle = 'rgba(80,40,20,.35)'; x.lineWidth = 1.2; x.stroke();
-        // unha
-        x.fillStyle = 'rgba(255,235,220,.5)'; x.beginPath(); x.ellipse(px, py - r * .42, r * .42, r * .22, 0, 0, 7); x.fill();
-        x.fillStyle = '#2a160b'; x.font = `800 ${Math.round(r * .95)}px system-ui,sans-serif`; x.textAlign = 'center'; x.fillText(String(k + 1), px, py + r * .36);
-        x.restore();
+        if (f.a < .02) return; const af = capo + f.f; const dp = D(af) - (D(af) - D(af - 1)) * .3; const tx = -dp, ty = SY(f.s, dp);
+        if (f.px === null) { f.px = tx; f.py = ty - 40; }
+        f.px += (tx - f.px) * (f.on ? .38 : .1); f.py += (ty - f.py) * (f.on ? .42 : .1); const lift = (1 - f.a) * 26;
+        this.finger(x, f.px, f.py - lift, k, .22 + k * .03, 7.4, '#e0b08a', String(k + 1), Math.min(1, f.a * 1.05), s, false);
       });
+      x.restore();
       // legenda
-      const c = this.cur; if (c) { const sp = c.sp !== undefined ? c.sp : c.p - this.capo; x.fillStyle = '#f1dfb8'; x.font = '600 15px system-ui,sans-serif'; x.textAlign = 'left'; const nm = NAMES[((c.p % 12) + 12) % 12] + (Math.floor(c.p / 12) - 1); x.fillText(`${nm} • corda ${c.s + 1} • ${c.f === 0 ? 'solta' : 'casa ' + c.f}${c.fin ? ' • dedo ' + c.fin : ''}`, 16, 24); }
+      const c = this.cur; if (c) { x.fillStyle = '#f1dfb8'; x.font = '600 15px system-ui,sans-serif'; x.textAlign = 'left'; const nm = NAMES[((c.p % 12) + 12) % 12] + (Math.floor(c.p / 12) - 1); x.fillText(`${nm} • corda ${c.s + 1} • ${c.f === 0 ? 'solta' : 'casa ' + c.f}${c.fin ? ' • dedo ' + c.fin : ''}`, 16, 24); }
       x.textAlign = 'left';
+    }
+    /** Dedo vindo de cima: ponta em (px,py), corpo subindo (e desbotando) para fora do quadro. */
+    finger(x, px, py, k, tilt, r, tone, label, alpha, s, right) {
+      const ux = Math.sin(tilt), uy = -Math.cos(tilt), len = 170, nx = -uy, ny = ux; x.save(); x.globalAlpha = alpha;
+      const g = x.createLinearGradient(px, py, px + ux * len, py + uy * len); g.addColorStop(0, right ? 'rgba(214,160,122,1)' : 'rgba(228,176,138,1)'); g.addColorStop(.5, 'rgba(196,141,104,.92)'); g.addColorStop(1, 'rgba(170,118,86,0)');
+      x.beginPath(); x.moveTo(px + nx * r, py + ny * r); x.lineTo(px + ux * len + nx * r * 1.12, py + uy * len + ny * r * 1.12); x.lineTo(px + ux * len - nx * r * 1.12, py + uy * len - ny * r * 1.12); x.lineTo(px - nx * r, py - ny * r); x.closePath(); x.fillStyle = g; x.fill();
+      x.strokeStyle = 'rgba(70,35,18,.35)'; x.lineWidth = .8; x.beginPath(); x.moveTo(px + nx * r, py + ny * r); x.lineTo(px + ux * len * .6 + nx * r * 1.06, py + uy * len * .6 + ny * r * 1.06); x.moveTo(px - nx * r, py - ny * r); x.lineTo(px + ux * len * .6 - nx * r * 1.06, py + uy * len * .6 - ny * r * 1.06); x.stroke();
+      const rg = x.createRadialGradient(px - r * .3, py - r * .3, r * .1, px, py, r * 1.05); rg.addColorStop(0, '#f6d6b8'); rg.addColorStop(1, tone); x.fillStyle = rg; x.beginPath(); x.arc(px, py, r, 0, 7); x.fill(); x.strokeStyle = 'rgba(80,40,20,.45)'; x.lineWidth = 1; x.stroke();
+      x.fillStyle = '#2a160b'; x.font = `800 ${(r * 1.05).toFixed(2)}px system-ui,sans-serif`; x.textAlign = 'center'; x.fillText(label, px, py + r * .36); x.restore();
     }
   }
   DH.Fretboard = Fretboard;
