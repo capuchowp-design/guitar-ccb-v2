@@ -36,28 +36,38 @@
       this.fing = [1, 2, 3, 4].map(() => ({ s: 2, f: 3, a: 0, px: null, py: null, on: false }));
       this.str = [0, 0, 0, 0, 0, 0].map(() => ({ amp: 0, rt0: 0, freq: 9 }));
       this.rh = RH_NAME.map((n, k) => ({ s: RH_REST[k], y: null, rt0: -9, pulse: 0 }));
-      this.last = -1; this.spb = 1; this.now = 0; this.idx = 0; this.cam = null; this.reg = null;
+      this.last = -1; this.spb = 1; this.now = 0; this.idx = 0; this.cams = null; this.views = null; this.reg = null;
       this.resize();
     }
     resize() {
       const r = this.c.getBoundingClientRect(); const dpr = Math.min(2, G.devicePixelRatio || 1);
       const w = Math.max(320, Math.round(r.width || 1000)), h = Math.max(180, Math.round(r.height || 420));
-      this.c.width = w * dpr; this.c.height = h * dpr; this.W = w; this.H = h; this.dpr = dpr; this.cam = null;
+      this.c.width = w * dpr; this.c.height = h * dpr; this.W = w; this.H = h; this.dpr = dpr; this.cams = null;
     }
-    setCamMode(m) { this.camMode = m === 'follow' ? 'follow' : 'full'; this.cam = null; }
+    /** modos: full (inteiro), right (mão direita), left (mão esquerda), both (as duas mãos, tela dividida) */
+    setCamMode(m) { m = m === 'follow' ? 'left' : m; this.camMode = ['full', 'right', 'left', 'both'].includes(m) ? m : 'full'; this.cams = null; }
     setNotes(notes, opts) { this.notes = notes.slice().sort((a, b) => a.t - b.t); this.type = opts.type; this.capo = opts.capo || 0; this.idx = 0; this.reset(); }
-    reset() { this.fing.forEach(f => { f.a = 0; f.on = false; f.px = null; }); this.str.forEach(s => { s.amp = 0; }); this.rh.forEach(r => { r.pulse = 0; }); this.reg = null; this.cam = null; }
+    reset() { this.fing.forEach(f => { f.a = 0; f.on = false; f.px = null; }); this.str.forEach(s => { s.amp = 0; }); this.rh.forEach(r => { r.pulse = 0; }); this.reg = null; this.cams = null; this.rh.forEach(r => { r.y = null; }); }
     pluck(s, t, vel) {
       const st = this.str[s]; st.amp = Math.min(1, .55 + vel * .7); st.rt0 = now_s(); st.freq = 8 + (5 - s) * .5;
       const k = s >= 3 ? 0 : s === 2 ? 1 : s === 1 ? 2 : 3; const r = this.rh[k]; r.s = s; r.rt0 = now_s();
     }
     /* câmera */
-    fullCam() { const s = Math.min(this.W * .96 / 1075, this.H * .95 / 545); return { cx: -318, cy: 22, s }; }
-    camTarget() {
-      const full = this.fullCam(); if (this.camMode !== 'follow' && !this.forceFollow) return full;
+    fullCam(w, h) { w = w || this.W; h = h || this.H; return { cx: -318, cy: 22, s: Math.min(w * .96 / 1075, h * .95 / 545), a: ANG }; }
+    /** Divide a tela em vistas: inteiro, uma mão, ou as duas mãos (lado a lado; empilhadas em telas estreitas). */
+    layout() {
+      const W = this.W, H = this.H, m = this.camMode, g = 2;
+      if (m === 'both') return W < 520
+        ? [{ x: 0, y: 0, w: W, h: H / 2 - g, k: 'right', two: 1 }, { x: 0, y: H / 2 + g, w: W, h: H / 2 - g, k: 'left', two: 1 }]
+        : [{ x: 0, y: 0, w: W / 2 - g, h: H, k: 'right', two: 1 }, { x: W / 2 + g, y: 0, w: W / 2 - g, h: H, k: 'left', two: 1 }];
+      return [{ x: 0, y: 0, w: W, h: H, k: m === 'right' ? 'right' : m === 'left' ? 'left' : 'full', two: 0 }];
+    }
+    target(v) {
+      const full = this.fullCam(v.w, v.h); if (v.k === 'full') return full; const a = ANG * .5;
+      if (v.k === 'right') { const vw = v.two ? 240 : 340; return { cx: -(v.two ? 582 : 566), cy: -2, s: clamp(v.w / vw, full.s, 5.2), a }; }
       const reg = this.reg || { lo: 1, hi: 5 }; const dLo = D(Math.max(0, reg.lo - 1.3)), dHi = D(reg.hi + .9);
-      const minVW = this.W < 600 ? 230 : 400; const vw = Math.max(minVW, (dHi - dLo) * 1.3 + 70);
-      return { cx: -(dLo + dHi) / 2, cy: -22, s: clamp(this.W / vw, full.s, 5.2) };
+      const minVW = v.w < 350 ? 175 : v.w < 600 ? 225 : 400; const vw = Math.max(minVW, (dHi - dLo) * 1.3 + 70);
+      return { cx: -(dLo + dHi) / 2, cy: -2, s: clamp(v.w / vw, full.s, 5.2), a };
     }
     update(now, dt, spb) {
       this.spb = spb || 1; const N = this.notes;
@@ -71,8 +81,13 @@
       let lo = 99, hi = 0, cnt = 0;
       for (const n of N) { if (n.t < now - 0.3) continue; if (n.t > now + 2.2 / Math.max(.4, this.spb)) break; if (n.f > 0) { lo = Math.min(lo, this.capo + n.f); hi = Math.max(hi, this.capo + n.f); cnt++; } }
       if (cnt) this.reg = { lo, hi }; else if (!act.length && this.reg) this.reg = { lo: Math.max(1, this.reg.lo * .98), hi: Math.max(this.reg.lo + 3, this.reg.hi * .98) };
-      const tg = this.camTarget(); if (!this.cam) this.cam = Object.assign({}, tg); const k = 1 - Math.exp(-dt * 3.6);
-      this.cam.cx += (tg.cx - this.cam.cx) * k; this.cam.cy += (tg.cy - this.cam.cy) * k; this.cam.s += (tg.s - this.cam.s) * k;
+      const vs = this.layout(); const key = this.camMode + '|' + vs.map(v => v.w + 'x' + v.h).join('|');
+      if (!this.cams || this.camKey !== key) { this.cams = vs.map(v => this.target(v)); this.camKey = key; }
+      const k = 1 - Math.exp(-dt * 3.6); vs.forEach((v, i) => { const tg = this.target(v), c = this.cams[i]; ['cx', 'cy', 's', 'a'].forEach(f => { c[f] += (tg[f] - c[f]) * k; }); }); this.views = vs;
+      // posição suavizada das bolinhas (uma vez por quadro, igual em todas as vistas)
+      const rt = now_s(), capo = this.capo;
+      this.rh.forEach((r, i) => { const d = RH_D[i], ts = rt - r.rt0, dip = ts >= 0 && ts < .26 ? Math.sin(Math.PI * Math.min(1, ts / .26)) : 0; const ty = SY(r.s, d) - 15 + dip * 13; if (r.y === null) r.y = ty; r.y += (ty - r.y) * (1 - Math.exp(-dt * 24)); });
+      this.fing.forEach(f => { if (f.a < .02) return; const af = capo + f.f, dp = D(af) - (D(af) - D(af - 1)) * .3, tx = -dp, ty = SY(f.s, dp); if (f.px === null) { f.px = tx; f.py = ty; } const kk = 1 - Math.exp(-dt * (f.on ? 30 : 8)); f.px += (tx - f.px) * kk; f.py += (ty - f.py) * kk; });
       this.fing.forEach(f => { f.a += ((f.on ? 1 : 0) - f.a) * (1 - Math.exp(-dt * (f.on ? 22 : 11))); });
       this.str.forEach(s => { s.amp *= Math.exp(-dt * 2.4); });
       this.now = now; this.act = act;
@@ -119,9 +134,19 @@
     }
     draw(now) {
       const x = this.x, dpr = this.dpr, W = this.W, H = this.H; x.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const bgr = x.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, Math.max(W, H) * .75); bgr.addColorStop(0, '#171512'); bgr.addColorStop(1, '#080807'); x.fillStyle = bgr; x.fillRect(0, 0, W, H);
-      const cam = this.cam || this.fullCam(); const s = cam.s; const nylon = this.type === 'nylon'; const capo = this.capo, rt = now_s();
-      x.save(); x.translate(W / 2, H / 2); x.scale(s, s); x.rotate(ANG); x.translate(-cam.cx, -cam.cy);
+      x.fillStyle = '#080807'; x.fillRect(0, 0, W, H);
+      const vs = this.views || this.layout(); const cams = this.cams || vs.map(v => this.target(v));
+      vs.forEach((v, i) => this.scene(x, v, cams[i], now));
+      if (vs.length > 1) { x.fillStyle = 'rgba(216,193,140,.55)'; if (vs[0].w === W) x.fillRect(0, vs[0].h, W, 2); else x.fillRect(vs[0].w, 0, 2, H); }
+      const c = this.cur; if (c) { x.fillStyle = '#f1dfb8'; x.font = '600 15px system-ui,sans-serif'; x.textAlign = 'left'; const nm = NAMES[((c.p % 12) + 12) % 12] + (Math.floor(c.p / 12) - 1); x.fillText(`${nm} • corda ${c.s + 1} • ${c.f === 0 ? 'solta' : 'casa ' + c.f}${c.fin ? ' • dedo ' + c.fin : ''}`, 16, 24); }
+      x.textAlign = 'left';
+    }
+    scene(x, v, cam, now) {
+      const W = v.w, H = v.h;
+      x.save(); x.beginPath(); x.rect(v.x, v.y, v.w, v.h); x.clip();
+      const bgr = x.createRadialGradient(v.x + W / 2, v.y + H / 2, 20, v.x + W / 2, v.y + H / 2, Math.max(W, H) * .75); bgr.addColorStop(0, '#171512'); bgr.addColorStop(1, '#080807'); x.fillStyle = bgr; x.fillRect(v.x, v.y, W, H);
+      const s = cam.s; const nylon = this.type === 'nylon'; const capo = this.capo, rt = now_s();
+      x.save(); x.translate(v.x + W / 2, v.y + H / 2); x.scale(s, s); x.rotate(cam.a); x.translate(-cam.cx, -cam.cy);
       this.drawBody(x, s); this.drawNeck(x, s);
       // números das casas (relativos ao capotraste, como na "casa" da legenda)
       x.font = `600 ${(12 / s).toFixed(2)}px system-ui,sans-serif`; x.textAlign = 'center'; x.fillStyle = 'rgba(216,193,140,.9)';
@@ -149,23 +174,12 @@
         x.fillStyle = g; x.beginPath(); x.roundRect ? x.roundRect(-d - 7, -h, 14, 2 * h, 5) : x.rect(-d - 7, -h, 14, 2 * h); x.fill();
         x.save(); x.translate(-d, -h - 6 / s); x.fillStyle = '#e8d9b0'; x.font = `700 ${(12 / s).toFixed(2)}px system-ui,sans-serif`; x.fillText('CAPO ' + capo, 0, 0); x.restore();
       }
-      // mão direita (p i m a)
-      for (let k = 0; k < 4; k++) {
-        const r = this.rh[k], d = RH_D[k]; const ts = (rt - r.rt0); const dip = ts >= 0 && ts < .26 ? Math.sin(Math.PI * Math.min(1, ts / .26)) : 0;
-        const rr = clamp(9 / s, 6.2, 10); const ty = SY(r.s, d) - rr * 1.9 + dip * rr * 1.7; if (r.y === null) r.y = ty; r.y += (ty - r.y) * .35;
-        this.bubble(x, -d, r.y, rr, RH_COL[k], RH_NAME[k], 1);
-      }
-      // mão esquerda (1 2 3 4)
-      this.fing.forEach((f, k) => {
-        if (f.a < .02) return; const af = capo + f.f; const dp = D(af) - (D(af) - D(af - 1)) * .3; const tx = -dp, ty = SY(f.s, dp);
-        if (f.px === null) { f.px = tx; f.py = ty; }
-        f.px += (tx - f.px) * (f.on ? .45 : .1); f.py += (ty - f.py) * (f.on ? .45 : .1);
-        this.bubble(x, f.px, f.py, clamp(11 / s, 7, 13), LH_COL[k], String(k + 1), Math.min(1, f.a * 1.05));
-      });
+      // mão direita (p i m a) e mão esquerda (1 2 3 4): posições calculadas em update()
+      for (let k = 0; k < 4; k++) { const r = this.rh[k]; if (r.y === null) continue; this.bubble(x, -RH_D[k], r.y, clamp(9 / s, 6.2, 10), RH_COL[k], RH_NAME[k], 1); }
+      this.fing.forEach((f, k) => { if (f.a < .02 || f.px === null) return; this.bubble(x, f.px, f.py, clamp(11 / s, 7, 13), LH_COL[k], String(k + 1), Math.min(1, f.a * 1.05)); });
       x.restore();
-      // legenda
-      const c = this.cur; if (c) { x.fillStyle = '#f1dfb8'; x.font = '600 15px system-ui,sans-serif'; x.textAlign = 'left'; const nm = NAMES[((c.p % 12) + 12) % 12] + (Math.floor(c.p / 12) - 1); x.fillText(`${nm} • corda ${c.s + 1} • ${c.f === 0 ? 'solta' : 'casa ' + c.f}${c.fin ? ' • dedo ' + c.fin : ''}`, 16, 24); }
-      x.textAlign = 'left';
+      if (this.camMode === 'both') { x.fillStyle = 'rgba(216,193,140,.85)'; x.font = '700 12px system-ui,sans-serif'; x.textAlign = 'left'; x.fillText(v.k === 'right' ? 'MÃO DIREITA (p i m a)' : 'MÃO ESQUERDA (1 2 3 4)', v.x + 10, v.y + v.h - 10); }
+      x.restore();
     }
     /** Bolinha colorida com o número do dedo (esquerda) ou a letra p-i-m-a (direita), sobre a corda. */
     bubble(x, px, py, r, col, label, alpha) {

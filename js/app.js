@@ -126,7 +126,13 @@
   $('#transpose').addEventListener('change', () => rebuild(false));
   ['notationMode', 'lyrics'].forEach(id => $('#' + id).addEventListener('change', () => { prefs[id] = $('#' + id).value; savePrefs(); if (st.arr) { drawScoreAndChords(); frame(true); } }));
   $('#leftHand').addEventListener('change', () => frame(true));
-  $('#camMode').addEventListener('change', () => { prefs.camMode = $('#camMode').value; savePrefs(); fb.setCamMode($('#camMode').value); frame(true); });
+  /* visualização do violão: inteiro / mão direita / mão esquerda / as duas mãos */
+  const camSels = document.querySelectorAll('.camSel');
+  function applyCam(v, save) {
+    if (save) { prefs.camMode = v; savePrefs(); } camSels.forEach(s => { s.value = v; });
+    document.querySelector('.neck').classList.toggle('both', v === 'both'); fb.setCamMode(v); fb.resize(); if (st.arr) frame(true);
+  }
+  camSels.forEach(s => s.addEventListener('change', () => applyCam(s.value, true)));
   $('#screenMode').addEventListener('change', () => { const v = $('#screenMode').value; $('#guitarStage').classList.toggle('hidden', v === 'score'); $('#scoreStage').classList.toggle('hidden', v === 'guitar'); $('#chordBar').style.display = v === 'guitar' ? 'none' : ''; fb.resize(); if (st.arr) frame(true); });
   /* modo 16:9 em tela cheia (violão ou partitura), útil no celular deitado */
   const setFsPlay = txt => document.querySelectorAll('.fsPlay').forEach(b => b.textContent = txt);
@@ -137,7 +143,7 @@
       if (on && s) { const rq = s.requestFullscreen || s.webkitRequestFullscreen; if (rq) Promise.resolve(rq.call(s)).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => { }); }
       else { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => { }); if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); }
     } catch (e) { }
-    setTimeout(() => { fb.forceFollow = !!(on && id === 'guitarStage' && Math.min(innerWidth, innerHeight * 16 / 9) < 900); fb.resize(); if (st.arr) { drawScoreAndChords(); frame(true); } }, 160);
+    setTimeout(() => { fb.resize(); if (st.arr) { drawScoreAndChords(); frame(true); } }, 160);
   }
   document.querySelectorAll('.presentBtn').forEach(b => b.onclick = () => setPresent(b.dataset.target, true));
   document.querySelectorAll('.fsExit').forEach(b => b.onclick = () => setPresent(null, false));
@@ -197,7 +203,7 @@
 
   // restaura preferências
   ['mode', 'guitar', 'capoSel', 'notationMode', 'lyrics'].forEach(id => { if (prefs[id]) $('#' + id).value = prefs[id]; });
-  $('#camMode').value = prefs.camMode || (window.innerWidth < 700 ? 'follow' : 'full'); fb.setCamMode($('#camMode').value);
+  applyCam(prefs.camMode === 'follow' ? 'left' : (prefs.camMode || (window.innerWidth < 700 ? 'left' : 'full')), false);
   window.__dh = { st, player, fb, openHymn, rebuild };
   loadCatalog().then(() => openHymn(prefs.last || 1));
   if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(console.warn));
