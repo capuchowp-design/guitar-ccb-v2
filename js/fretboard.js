@@ -35,6 +35,7 @@
       this.c = canvas; this.x = canvas.getContext('2d'); this.notes = []; this.type = 'nylon'; this.capo = 0; this.camMode = 'full';
       this.fing = [1, 2, 3, 4].map(() => ({ s: 2, f: 3, a: 0, px: null, py: null, on: false }));
       this.str = [0, 0, 0, 0, 0, 0].map(() => ({ amp: 0, rt0: 0, freq: 9 }));
+      this.ob = [0, 1, 2, 3, 4, 5].map(() => ({ a: 0, on: false })); this.rhN = [[], [], [], []];
       this.rh = RH_NAME.map((n, k) => ({ s: RH_REST[k], y: null, rt0: -9, pulse: 0 }));
       this.last = -1; this.spb = 1; this.now = 0; this.idx = 0; this.cams = null; this.views = null; this.reg = null;
       this.resize();
@@ -46,11 +47,12 @@
     }
     /** modos: full (inteiro), right (mão direita), left (mão esquerda), both (as duas mãos, tela dividida) */
     setCamMode(m) { m = m === 'follow' ? 'left' : m; this.camMode = ['full', 'right', 'left', 'both'].includes(m) ? m : 'full'; this.cams = null; }
-    setNotes(notes, opts) { this.notes = notes.slice().sort((a, b) => a.t - b.t); this.type = opts.type; this.capo = opts.capo || 0; this.idx = 0; this.reset(); }
-    reset() { this.fing.forEach(f => { f.a = 0; f.on = false; f.px = null; }); this.str.forEach(s => { s.amp = 0; }); this.rh.forEach(r => { r.pulse = 0; }); this.reg = null; this.cams = null; this.rh.forEach(r => { r.y = null; }); }
+    setNotes(notes, opts) { this.notes = notes.slice().sort((a, b) => a.t - b.t); this.type = opts.type; this.capo = opts.capo || 0; this.idx = 0;
+      this.rhN = [[], [], [], []]; this.notes.forEach(n => this.rhN[n.s >= 3 ? 0 : n.s === 2 ? 1 : n.s === 1 ? 2 : 3].push(n)); this.reset(); }
+    reset() { this.fing.forEach(f => { f.a = 0; f.on = false; f.px = null; }); this.str.forEach(s => { s.amp = 0; }); this.ob.forEach(o => { o.a = 0; }); this.rh.forEach(r => { r.pulse = 0; }); this.reg = null; this.cams = null; this.rh.forEach(r => { r.y = null; }); }
     pluck(s, t, vel) {
       const st = this.str[s]; st.amp = Math.min(1, .55 + vel * .7); st.rt0 = now_s(); st.freq = 8 + (5 - s) * .5;
-      const k = s >= 3 ? 0 : s === 2 ? 1 : s === 1 ? 2 : 3; const r = this.rh[k]; r.s = s; r.rt0 = now_s();
+      const k = s >= 3 ? 0 : s === 2 ? 1 : s === 1 ? 2 : 3; this.rh[k].rt0 = now_s();
     }
     /* câmera */
     fullCam(w, h) { w = w || this.W; h = h || this.H; return { cx: -318, cy: 22, s: Math.min(w * .96 / 1075, h * .95 / 545), a: ANG }; }
@@ -78,15 +80,23 @@
       act.forEach(n => { const k = n.fin - 1; if (k < 0 || k > 3) return; const f = this.fing[k]; if (used.has(k)) return; used.add(k); f.s = n.s; f.f = n.f; f.on = true; });
       this.fing.forEach((f, k) => { if (!used.has(k)) f.on = false; });
       // região de casas das próximas notas (para a câmera de zoom)
-      let lo = 99, hi = 0, cnt = 0;
-      for (const n of N) { if (n.t < now - 0.3) continue; if (n.t > now + 2.2 / Math.max(.4, this.spb)) break; if (n.f > 0) { lo = Math.min(lo, this.capo + n.f); hi = Math.max(hi, this.capo + n.f); cnt++; } }
-      if (cnt) this.reg = { lo, hi }; else if (!act.length && this.reg) this.reg = { lo: Math.max(1, this.reg.lo * .98), hi: Math.max(this.reg.lo + 3, this.reg.hi * .98) };
+      let lo = 99, hi = 0, cnt = 0, opn = false;
+      for (const n of N) { if (n.t < now - 0.3) continue; if (n.t > now + 2.2 / Math.max(.4, this.spb)) break; if (n.f > 0) { lo = Math.min(lo, this.capo + n.f); hi = Math.max(hi, this.capo + n.f); cnt++; } else if (n.f === 0) opn = true; }
+      if (cnt) this.reg = { lo, hi }; else if (opn) this.reg = { lo: this.capo + 1, hi: this.capo + 4 }; else if (!act.length && !opn && this.reg) this.reg = { lo: Math.max(1, this.reg.lo * .98), hi: Math.max(this.reg.lo + 3, this.reg.hi * .98) };
       const vs = this.layout(); const key = this.camMode + '|' + vs.map(v => v.w + 'x' + v.h).join('|');
       if (!this.cams || this.camKey !== key) { this.cams = vs.map(v => this.target(v)); this.camKey = key; }
       const k = 1 - Math.exp(-dt * 3.6); vs.forEach((v, i) => { const tg = this.target(v), c = this.cams[i]; ['cx', 'cy', 's', 'a'].forEach(f => { c[f] += (tg[f] - c[f]) * k; }); }); this.views = vs;
       // posição suavizada das bolinhas (uma vez por quadro, igual em todas as vistas)
       const rt = now_s(), capo = this.capo;
-      this.rh.forEach((r, i) => { const d = RH_D[i], ts = rt - r.rt0, dip = ts >= 0 && ts < .26 ? Math.sin(Math.PI * Math.min(1, ts / .26)) : 0; const ty = SY(r.s, d) - 15 + dip * 13; if (r.y === null) r.y = ty; r.y += (ty - r.y) * (1 - Math.exp(-dt * 24)); });
+      this.rh.forEach((r, i) => {   // cada dedo já fica EM CIMA da corda da sua próxima nota; ao tocar, só pulsa
+        const arr = this.rhN[i]; let a = 0, b = arr.length; while (a < b) { const m = (a + b) >> 1; if (arr[m].t < now - 0.1) a = m + 1; else b = m; }
+        const nx = arr[a] || arr[arr.length - 1]; if (nx) r.s = nx.s;
+        const ty = SY(r.s, RH_D[i]); if (r.y === null) r.y = ty; r.y += (ty - r.y) * (1 - Math.exp(-dt * 30));
+        const ts = rt - r.rt0; r.pulse = ts >= 0 && ts < .3 ? Math.sin(Math.PI * Math.min(1, ts / .3)) : 0;
+      });
+      // cordas soltas (sem dedo) que estão soando
+      const openOn = new Set(); for (const n of N) { if (n.t > now + 0.6) break; if (n.f === 0 && now >= n.t - lead && now < n.t + Math.max(.3, Math.min(n.hold, 1.5))) openOn.add(n.s); }
+      this.ob.forEach((o, s) => { o.on = openOn.has(s); o.a += ((o.on ? 1 : 0) - o.a) * (1 - Math.exp(-dt * (o.on ? 22 : 9))); });
       this.fing.forEach(f => { if (f.a < .02) return; const af = capo + f.f, dp = D(af) - (D(af) - D(af - 1)) * .3, tx = -dp, ty = SY(f.s, dp); if (f.px === null) { f.px = tx; f.py = ty; } const kk = 1 - Math.exp(-dt * (f.on ? 30 : 8)); f.px += (tx - f.px) * kk; f.py += (ty - f.py) * kk; });
       this.fing.forEach(f => { f.a += ((f.on ? 1 : 0) - f.a) * (1 - Math.exp(-dt * (f.on ? 22 : 11))); });
       this.str.forEach(s => { s.amp *= Math.exp(-dt * 2.4); });
@@ -174,11 +184,38 @@
         x.fillStyle = g; x.beginPath(); x.roundRect ? x.roundRect(-d - 7, -h, 14, 2 * h, 5) : x.rect(-d - 7, -h, 14, 2 * h); x.fill();
         x.save(); x.translate(-d, -h - 6 / s); x.fillStyle = '#e8d9b0'; x.font = `700 ${(12 / s).toFixed(2)}px system-ui,sans-serif`; x.fillText('CAPO ' + capo, 0, 0); x.restore();
       }
-      // mão direita (p i m a) e mão esquerda (1 2 3 4): posições calculadas em update()
-      for (let k = 0; k < 4; k++) { const r = this.rh[k]; if (r.y === null) continue; this.bubble(x, -RH_D[k], r.y, clamp(9 / s, 6.2, 10), RH_COL[k], RH_NAME[k], 1); }
+      // mão direita (p i m a): bolinha centrada na corda; pulsa ao palhetar
+      for (let k = 0; k < 4; k++) {
+        const r = this.rh[k]; if (r.y === null) continue; const rr = clamp(9 / s, 6.2, 10);
+        if (r.pulse > .02) { x.beginPath(); x.arc(-RH_D[k], r.y, rr * (1.15 + r.pulse * .9), 0, 7); x.lineWidth = Math.max(.8, rr * .12); x.strokeStyle = `rgba(255,255,255,${(.55 * r.pulse).toFixed(2)})`; x.stroke(); }
+        this.bubble(x, -RH_D[k], r.y, rr * (1 + .22 * r.pulse), RH_COL[k], RH_NAME[k], 1);
+      }
+      // mão esquerda (1 2 3 4)
       this.fing.forEach((f, k) => { if (f.a < .02 || f.px === null) return; this.bubble(x, f.px, f.py, clamp(11 / s, 7, 13), LH_COL[k], String(k + 1), Math.min(1, f.a * 1.05)); });
+      // corda solta: anel "0" antes da pestana (como o "o" dos diagramas de acordes)
+      const chips = [];
+      if (v.k !== 'right') this.ob.forEach((o, si) => {
+        if (o.a < .02) return; const rr = clamp(9.5 / s, 5.2, 9.5); const off = 16 + (si % 2) * (rr * 2.1); let wx, wy;   // cordas vizinhas ficam alternadas para não se sobrepor
+        if (capo > 0) { const d = Math.max(3, D(capo) - off); wx = -d; wy = SY(si, d); }
+        else { const px = si >= 3 ? 40 + (5 - si) * 42 : 40 + si * 42, py = (si >= 3 ? -1 : 1) * (31 + 6 * Math.min(1, px / 150) - 7), q = off / px; wx = off; wy = SY(si, 0) + (py - SY(si, 0)) * q; }
+        const dx = wx - cam.cx, dy = wy - cam.cy, ca = Math.cos(cam.a), sa = Math.sin(cam.a); const sx = v.x + W / 2 + s * (dx * ca - dy * sa), sy = v.y + H / 2 + s * (dx * sa + dy * ca);
+        if (sx < v.x + 14 || sx > v.x + W - 14 || sy < v.y + 14 || sy > v.y + H - 14) { chips.push({ si, sx, sy, a: o.a }); return; }
+        this.openRing(x, wx, wy, rr, o.a, s);
+      });
       x.restore();
-      if (this.camMode === 'both') { x.fillStyle = 'rgba(216,193,140,.85)'; x.font = '700 12px system-ui,sans-serif'; x.textAlign = 'left'; x.fillText(v.k === 'right' ? 'MÃO DIREITA (p i m a)' : 'MÃO ESQUERDA (1 2 3 4)', v.x + 10, v.y + v.h - 10); }
+      // corda solta fora do quadro (ex.: câmera nas casas altas): aviso na borda
+      chips.forEach((c, n) => { const right = c.sx > v.x + W / 2; const txt = right ? `corda ${c.si + 1} solta ○ ▶` : `◀ ○ corda ${c.si + 1} solta`; x.font = '700 12px system-ui,sans-serif'; const tw = x.measureText(txt).width + 14; const cx0 = right ? v.x + W - tw - 8 : v.x + 8, cy0 = v.y + 34 + n * 24; x.globalAlpha = Math.min(1, c.a * 1.2); x.fillStyle = 'rgba(20,17,12,.85)'; x.fillRect(cx0, cy0, tw, 20); x.strokeStyle = '#fff'; x.lineWidth = 1; x.strokeRect(cx0 + .5, cy0 + .5, tw - 1, 19); x.fillStyle = '#fff'; x.textAlign = 'left'; x.fillText(txt, cx0 + 7, cy0 + 14.5); x.globalAlpha = 1; });
+      // legenda da vista
+      x.font = '700 12px system-ui,sans-serif'; x.textAlign = 'left'; x.fillStyle = 'rgba(216,193,140,.9)';
+      if (this.camMode === 'both') x.fillText(v.k === 'right' ? 'MÃO DIREITA (p i m a)' : 'MÃO ESQUERDA (1 2 3 4)', v.x + 10, v.y + v.h - 10);
+      if (v.k !== 'right') { x.fillStyle = 'rgba(255,255,255,.8)'; x.fillText('○ 0 = corda solta (sem dedo)', v.x + 10, v.y + v.h - (this.camMode === 'both' ? 28 : 10)); }
+      x.restore();
+    }
+    /** Anel "0" = corda solta (toca sem apertar nenhuma casa). */
+    openRing(x, px, py, r, alpha, s) {
+      x.save(); x.globalAlpha = alpha; x.beginPath(); x.arc(px, py, r, 0, 7); x.fillStyle = 'rgba(15,13,10,.82)'; x.fill();
+      x.lineWidth = Math.max(1.2, r * .2); x.strokeStyle = '#ffffff'; x.stroke();
+      x.fillStyle = '#ffffff'; x.font = `800 ${(r * 1.15).toFixed(2)}px system-ui,sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('0', px, py + r * .05); x.textBaseline = 'alphabetic';
       x.restore();
     }
     /** Bolinha colorida com o número do dedo (esquerda) ou a letra p-i-m-a (direita), sobre a corda. */
