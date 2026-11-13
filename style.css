@@ -34,3 +34,7 @@ button,select,input{font:inherit}button{background:var(--panel2);border:1px soli
 .stage.present .staff,.stage.present .neck{aspect-ratio:16/9;height:auto;width:min(100%,calc((100vh - 66px)*16/9));width:min(100%,calc((100dvh - 66px)*16/9));max-height:calc(100vh - 66px);max-height:calc(100dvh - 66px);margin:0 auto;border-radius:8px}
 .stage.present .fsbar{display:flex;gap:8px;align-items:center;margin:8px auto 0;width:min(100%,calc((100vh - 66px)*16/9));width:min(100%,calc((100dvh - 66px)*16/9))}
 .fsbar input{flex:1;accent-color:var(--gold)}.fsbar button{padding:8px 14px}
+
+.stagehead{flex-wrap:wrap}.stagehead h3{flex:1 1 220px}.camSel{background:#111;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px;margin-bottom:6px;max-width:100%}
+.fsbar .camSel{margin:0;max-width:30vw;padding:8px 6px}
+@media(max-width:520px){.neck.both{height:440px}}
