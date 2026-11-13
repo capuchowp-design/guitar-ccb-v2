@@ -81,8 +81,10 @@
                   note = { t: M.start + start, ts: start, d: dur, p, v: voice, m: mi, fm, lyr: null, part: pi, st: pt.txt('step', 'C'), al: pt.num('alter', 0) };
                   notes.push(note); if (ties.includes('start')) open.set(key, note);
                 }
-                const ly = ch.all('lyric').find(l => (l.attr('number', '1') + '') === '1');
-                if (ly && ly.get('text') && !note.lyr) note.lyr = { text: ly.txt('text'), syl: ly.txt('syllabic', 'single') };
+                ch.all('lyric').forEach(ly => {   // todos os versos (number="1", "2", "3"…)
+                  const vn = String(ly.attr('number', '1') + '').replace(/\D/g, '') || '1';
+                  if (ly.get('text')) { const L = { text: ly.txt('text'), syl: ly.txt('syllabic', 'single') }; note.lyrs = note.lyrs || {}; if (!note.lyrs[vn]) note.lyrs[vn] = L; if (vn === '1' && !note.lyr) note.lyr = L; }
+                });
               }
             }
             if (fm0(ch)) M.fermata = true;
@@ -156,7 +158,7 @@
       const put = (arr, n, p, d, t) => {
         const last = arr[arr.length - 1];
         if (last && last.t + last.d > t + EPS) last.d = Math.max(0.0625, t - last.t);
-        const lyr = n.find(x => x.lyr); const sp = n.find(x => x.p === p) || n[0]; arr.push({ t, d, p, m: n[0].m, fm: n.some(x => x.fm), lyr: lyr ? lyr.lyr : null, st: sp.st, al: sp.al });
+        const lyr = n.find(x => x.lyr); const lyrs = {}; n.forEach(x => x.lyrs && Object.keys(x.lyrs).forEach(k => { if (!lyrs[k]) lyrs[k] = x.lyrs[k]; })); const sp = n.find(x => x.p === p) || n[0]; arr.push({ t, d, p, m: n[0].m, fm: n.some(x => x.fm), lyr: lyr ? lyr.lyr : null, lyrs, st: sp.st, al: sp.al });
       };
       for (const k of times) {
         const g = byT.get(k); const t = g[0].t;

@@ -65,7 +65,8 @@
 
   function layout(sc, arr, o) {
     const sp = o.sp || 7.5, W = o.W; const fifths = arr.fifths; const tabOnly = !!o.tabOnly;
-    const M = sc.measures; const lyrOn = !!o.lyrics && arr.notes.some(n => n.lyr);
+    const M = sc.measures; const verseSet = new Set(); arr.notes.forEach(n => { if (n.lyrs) Object.keys(n.lyrs).forEach(k => verseSet.add(k)); else if (n.lyr) verseSet.add('1'); });
+    const verses = [...verseSet].sort((x, y) => x - y); const lyrOn = !!o.lyrics && verses.length > 0;
     const singleVoice = !arr.notes.some(n => n.voice === 2);
     const trueDur = { 1: true, 2: !(arr.info.mode === 'full' || arr.info.mode === 'simple') };
     const per = buildMeasures(sc, arr, trueDur);
@@ -129,7 +130,7 @@
       if (!cur || cur.w + ms.w > W - 2 * left - (systems.length === 1 ? 0 : 0)) { cur = { ms: [], w: hw }; systems.push(cur); }
       cur.ms.push(ms); cur.w += ms.w; cur.hw = systems.length === 1 ? headW + firstExtra : headW;
     });
-    return { meas, systems, sp, W, left, headW, firstExtra, fifths, lyrOn, singleVoice, tabOnly, trueDur };
+    return { meas, systems, sp, W, left, headW, firstExtra, fifths, lyrOn, verses, singleVoice, tabOnly, trueDur };
   }
 
   function draw(sc, arr, L, o) {
@@ -143,10 +144,11 @@
     const voltas = [];
     L.systems.forEach((sys, si) => {
       const staffTop = y + sysTopPad + (tabOnly ? 1 * sp : 0), staffBot = staffTop + staffH;
-      const lyrY = staffBot + 4.9 * sp;
-      const tabTop = tabOnly ? staffTop + sp * 0.6 : staffBot + (L.lyrOn ? 6.4 * sp : 4.8 * sp);
+      const lyrY = staffBot + 5.7 * sp;
+      const nv = L.lyrOn ? L.verses.length : 0, VG = 1.95 * sp;
+      const tabTop = tabOnly ? staffTop + sp * 0.6 : staffBot + (L.lyrOn ? 7.2 * sp + (nv - 1) * VG : 4.8 * sp);
       const tabBot = tabTop + tabH; const rhyY = tabBot + 1.4 * sp;
-      const sysBottom = tabBot + (tabOnly ? 6.4 : 3.6) * sp + (L.lyrOn && tabOnly ? 3 * sp : 0);
+      const sysBottom = tabBot + (tabOnly ? 6.4 : 3.6) * sp + (L.lyrOn && tabOnly ? 3 * sp + (nv - 1) * VG : 0);
       const lyrYy = tabOnly ? tabBot + 7.2 * sp : lyrY;
       // extras de largura: justificar
       const hw = si === 0 ? L.headW + L.firstExtra : L.headW; const avail = W - 2 * L.left - hw;
@@ -266,7 +268,11 @@
           }
         }
         // letra
-        if (L.lyrOn) ms.voices[1].forEach(e => { if (e.rest || e.tiePrev && !e.items[0].n.lyr) return; const ly = e.items.map(i => i.n.lyr).find(Boolean); if (!ly) return; const hy = lyrYy; g.push(`<text x="${f1(X(e.t))}" y="${f1(hy)}" font-size="${f1(1.7 * sp)}" font-family="Georgia,serif" text-anchor="middle" class="lyr">${esc(ly.text)}${ly.syl === 'begin' || ly.syl === 'middle' ? '-' : ''}</text>`); });
+        if (L.lyrOn) L.verses.forEach((vn, vi) => ms.voices[1].forEach(e => {
+          const get = n => (n.lyrs ? n.lyrs[vn] : (vn === '1' ? n.lyr : null));
+          if (e.rest || e.tiePrev && !get(e.items[0].n)) return; const ly = e.items.map(i => get(i.n)).find(Boolean); if (!ly) return;
+          g.push(`<text x="${f1(X(e.t))}" y="${f1(lyrYy + vi * VG)}" font-size="${f1(1.7 * sp)}" font-family="Georgia,serif" text-anchor="middle" class="lyr">${esc(ly.text)}${ly.syl === 'begin' || ly.syl === 'middle' ? '-' : ''}</text>`);
+        }));
         // tablatura
         ms.tab.forEach(n => {
           const ti = ms.idxOf(n.t - m.start); const x = colX[ti]; const yy = tabTop + n.s * tabGap; const txt = String(n.f);

@@ -51,7 +51,7 @@
     const add = (o) => { o.id = id++; items.push(o); meta.set(o.id, o); return o; };
     const measureOf = t => { const M = sc.measures; let lo = 0, hi = M.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (M[mid].start <= t + EPS) lo = mid; else hi = mid - 1; } return lo; };
     const alts = c => [{ p: -12, cost: c }, { p: 12, cost: c }];
-    const mk = (n, role, extra) => Object.assign({ t: n.t, d: n.d, hold: n.d, p: n.p, ring: n.d, role, voice: 1, pri: 0, drop: null, alts: [], orig: n.orig, lyr: n.lyr, fm: n.fm, adapted: n.adapted, rel: true, st: n.st, al: n.al }, extra || {});
+    const mk = (n, role, extra) => Object.assign({ t: n.t, d: n.d, hold: n.d, p: n.p, ring: n.d, role, voice: 1, pri: 0, drop: null, alts: [], orig: n.orig, lyr: n.lyr, lyrs: n.lyrs, fm: n.fm, adapted: n.adapted, rel: true, st: n.st, al: n.al }, extra || {});
     const info = { mode, capo, adapted: 0, dropped: 0, tr };
 
     if (['S', 'A', 'T', 'B'].includes(mode)) {
@@ -132,7 +132,7 @@
     items.forEach(o => {
       const r = res.get(o.id); if (!r || r.dropped) { if (r && r.dropped) info.dropped++; return; }
       const sp = r.p; if (sp !== o.p) info.adapted++;
-      notes.push({ id: o.id, t: o.t, d: o.d, hold: o.hold, ring: o.ring, p: sp, sp: sp - capo, role: o.role, voice: o.voice, s: r.s, f: r.f, fin: r.fin, pos: r.pos, m: measureOf(o.t), lyr: o.lyr, fm: o.fm, rel: o.rel, adapted: o.adapted || r.adapted, voiceName: o.voiceName, st: (o.st && r.p === o.p) ? o.st : undefined, al: (o.st && r.p === o.p) ? o.al : undefined });
+      notes.push({ id: o.id, t: o.t, d: o.d, hold: o.hold, ring: o.ring, p: sp, sp: sp - capo, role: o.role, voice: o.voice, s: r.s, f: r.f, fin: r.fin, pos: r.pos, m: measureOf(o.t), lyr: o.lyr, lyrs: o.lyrs, fm: o.fm, rel: o.rel, adapted: o.adapted || r.adapted, voiceName: o.voiceName, st: (o.st && r.p === o.p) ? o.st : undefined, al: (o.st && r.p === o.p) ? o.al : undefined });
     });
     notes.sort((a, b) => a.t - b.t || b.p - a.p);
     info.adapted += notes.filter(n => n.adapted).length * 0; // (contagem via notas marcadas)

@@ -21,6 +21,8 @@
     [824, 92], [806, 150], [772, 186], [720, 195], [650, 170], [600, 137], [562, 126], [535, 127], [506, 121], [478, 106], [450, 84], [420, 66], [392, 50], [368, 38], [352, 29]];
   const RH_D = [572, 586, 600, 614], RH_NAME = ['p', 'i', 'm', 'a'], RH_REST = [3, 2, 1, 0];
   const GOLD = '#d8c18c', CREAM = '#efe6cc';
+  const LH_COL = ['#4da3ff', '#4fd37a', '#ffb02e', '#ee6bd8'];     // dedos 1-4 (mão esquerda)
+  const RH_COL = ['#ffd84d', '#2fd6c1', '#9bb8ff', '#ff8aa8'];     // p i m a (mão direita)
 
   function spline(x, P, k) {            // Catmull-Rom → Bézier, em coordenadas (d,y) mapeadas para o mundo (-d,y)
     const pt = i => { const p = P[clamp(i, 0, P.length - 1)]; return [-(p[0] * k[0] + k[2]), p[1] * k[1]]; };
@@ -150,29 +152,28 @@
       // mão direita (p i m a)
       for (let k = 0; k < 4; k++) {
         const r = this.rh[k], d = RH_D[k]; const ts = (rt - r.rt0); const dip = ts >= 0 && ts < .26 ? Math.sin(Math.PI * Math.min(1, ts / .26)) : 0;
-        const ty = SY(r.s, d) - 22 + dip * 20; if (r.y === null) r.y = ty; r.y += (ty - r.y) * .35;
-        this.finger(x, -d, r.y, k, .0 + .12, 5.3, '#d9a17a', RH_NAME[k], 1, s, true);
+        const rr = clamp(9.5 / s, 6.2, 9.5); const ty = SY(r.s, d) - rr * 1.9 + dip * rr * 1.7; if (r.y === null) r.y = ty; r.y += (ty - r.y) * .35;
+        this.bubble(x, -d, r.y, rr, RH_COL[k], RH_NAME[k], 1);
       }
       // mão esquerda (1 2 3 4)
       this.fing.forEach((f, k) => {
         if (f.a < .02) return; const af = capo + f.f; const dp = D(af) - (D(af) - D(af - 1)) * .3; const tx = -dp, ty = SY(f.s, dp);
-        if (f.px === null) { f.px = tx; f.py = ty - 40; }
-        f.px += (tx - f.px) * (f.on ? .38 : .1); f.py += (ty - f.py) * (f.on ? .42 : .1); const lift = (1 - f.a) * 26;
-        this.finger(x, f.px, f.py - lift, k, .22 + k * .03, 7.4, '#e0b08a', String(k + 1), Math.min(1, f.a * 1.05), s, false);
+        if (f.px === null) { f.px = tx; f.py = ty; }
+        f.px += (tx - f.px) * (f.on ? .45 : .1); f.py += (ty - f.py) * (f.on ? .45 : .1);
+        this.bubble(x, f.px, f.py, clamp(10.5 / s, 7, 10.5), LH_COL[k], String(k + 1), Math.min(1, f.a * 1.05));
       });
       x.restore();
       // legenda
       const c = this.cur; if (c) { x.fillStyle = '#f1dfb8'; x.font = '600 15px system-ui,sans-serif'; x.textAlign = 'left'; const nm = NAMES[((c.p % 12) + 12) % 12] + (Math.floor(c.p / 12) - 1); x.fillText(`${nm} • corda ${c.s + 1} • ${c.f === 0 ? 'solta' : 'casa ' + c.f}${c.fin ? ' • dedo ' + c.fin : ''}`, 16, 24); }
       x.textAlign = 'left';
     }
-    /** Dedo vindo de cima: ponta em (px,py), corpo subindo (e desbotando) para fora do quadro. */
-    finger(x, px, py, k, tilt, r, tone, label, alpha, s, right) {
-      const ux = Math.sin(tilt), uy = -Math.cos(tilt), len = 170, nx = -uy, ny = ux; x.save(); x.globalAlpha = alpha;
-      const g = x.createLinearGradient(px, py, px + ux * len, py + uy * len); g.addColorStop(0, right ? 'rgba(214,160,122,1)' : 'rgba(228,176,138,1)'); g.addColorStop(.5, 'rgba(196,141,104,.92)'); g.addColorStop(1, 'rgba(170,118,86,0)');
-      x.beginPath(); x.moveTo(px + nx * r, py + ny * r); x.lineTo(px + ux * len + nx * r * 1.12, py + uy * len + ny * r * 1.12); x.lineTo(px + ux * len - nx * r * 1.12, py + uy * len - ny * r * 1.12); x.lineTo(px - nx * r, py - ny * r); x.closePath(); x.fillStyle = g; x.fill();
-      x.strokeStyle = 'rgba(70,35,18,.35)'; x.lineWidth = .8; x.beginPath(); x.moveTo(px + nx * r, py + ny * r); x.lineTo(px + ux * len * .6 + nx * r * 1.06, py + uy * len * .6 + ny * r * 1.06); x.moveTo(px - nx * r, py - ny * r); x.lineTo(px + ux * len * .6 - nx * r * 1.06, py + uy * len * .6 - ny * r * 1.06); x.stroke();
-      const rg = x.createRadialGradient(px - r * .3, py - r * .3, r * .1, px, py, r * 1.05); rg.addColorStop(0, '#f6d6b8'); rg.addColorStop(1, tone); x.fillStyle = rg; x.beginPath(); x.arc(px, py, r, 0, 7); x.fill(); x.strokeStyle = 'rgba(80,40,20,.45)'; x.lineWidth = 1; x.stroke();
-      x.fillStyle = '#2a160b'; x.font = `800 ${(r * 1.05).toFixed(2)}px system-ui,sans-serif`; x.textAlign = 'center'; x.fillText(label, px, py + r * .36); x.restore();
+    /** Bolinha colorida com o número do dedo (esquerda) ou a letra p-i-m-a (direita), sobre a corda. */
+    bubble(x, px, py, r, col, label, alpha) {
+      x.save(); x.globalAlpha = alpha;
+      x.beginPath(); x.arc(px + r * .12, py + r * .16, r * 1.04, 0, 7); x.fillStyle = 'rgba(0,0,0,.45)'; x.fill();
+      const g = x.createRadialGradient(px - r * .35, py - r * .4, r * .1, px, py, r * 1.05); g.addColorStop(0, '#ffffff'); g.addColorStop(.28, col); g.addColorStop(1, col);
+      x.beginPath(); x.arc(px, py, r, 0, 7); x.fillStyle = g; x.fill(); x.lineWidth = Math.max(.8, r * .13); x.strokeStyle = 'rgba(255,255,255,.92)'; x.stroke();
+      x.fillStyle = '#14110c'; x.font = `800 ${(r * 1.18).toFixed(2)}px system-ui,sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(label, px, py + r * .06); x.textBaseline = 'alphabetic'; x.restore();
     }
   }
   DH.Fretboard = Fretboard;

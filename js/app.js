@@ -79,9 +79,10 @@
   }
   function drawScoreAndChords() {
     const arr = st.arr, sc = st.sc; const host = $('#scoreHost'); const wrap = $('#scoreWrap'); const W = Math.max(380, wrap.clientWidth - 2);
-    const sp = Math.max(6, Math.min(9, W / 112)); const tabOnly = $('#notationMode').value === 'tab';
+    const sp = Math.max(5.6, Math.min(9, W / 112)); const tabOnly = $('#notationMode').value === 'tab';
     const r = DH.render.render(sc, arr, { W, sp, tabOnly, lyrics: $('#lyrics').value === 'on' });
-    host.innerHTML = r.svg; st.lay = r; st.prevCol = -1; st.onEls = []; st.sp = sp;
+    host.innerHTML = r.svg; st.lay = r; st.prevCol = -1; st.prevSys = -1; st.onEls = []; st.sp = sp;
+    const ls = r.systems[r.systems.length - 1]; host.style.paddingBottom = Math.max(0, wrap.clientHeight - (ls.bottom - ls.top) - 24) + 'px';
     host.querySelector('svg').addEventListener('click', ev => {
       const svg = host.querySelector('svg'); const b = svg.getBoundingClientRect(); const x = (ev.clientX - b.left) * (W / b.width), y = (ev.clientY - b.top) * (W / b.width);
       const m = r.meas.find(m => x >= m.x0 && x <= m.x1 && y >= m.y0 - 40 && y <= m.y1 + 20); if (m) { player.seek(player.beatForMeasure(m.mi)); frame(true); }
@@ -93,20 +94,21 @@
   }
 
   /* ---------- reprodução / animação ---------- */
-  function play() { if (!st.arr) return; player.setVolume(Number($('#volume').value) / 100); player.play(); $('#playBtn').textContent = 'Ⅱ'; loop(); }
-  function pause() { if (player.playing) player.pause(); $('#playBtn').textContent = '▶'; cancelAnimationFrame(st.raf); }
-  player.onEnd = () => { $('#playBtn').textContent = '▶'; frame(true); };
+  function play() { if (!st.arr) return; player.setVolume(Number($('#volume').value) / 100); player.play(); $('#playBtn').textContent = $('#fsPlay').textContent = 'Ⅱ'; loop(); }
+  function pause() { if (player.playing) player.pause(); $('#playBtn').textContent = $('#fsPlay').textContent = '▶'; cancelAnimationFrame(st.raf); }
+  player.onEnd = () => { $('#playBtn').textContent = $('#fsPlay').textContent = '▶'; frame(true); };
   function loop() { cancelAnimationFrame(st.raf); const t = performance.now(); const dt = Math.min(.1, (t - st.lastFrame) / 1000 || .016); st.lastFrame = t; frame(false, dt); if (player.playing) st.raf = requestAnimationFrame(loop); }
   function frame(force, dt) {
     if (!st.arr) return; const beat = player.beat; const tw = player.writtenT(beat);
-    $('#progress').value = player.total ? Math.round(beat / player.total * 1000) : 0; $('#clock').textContent = fmt(beat * player.spb) + ' / ' + fmt(player.total * player.spb);
+    const pv = player.total ? Math.round(beat / player.total * 1000) : 0; const ck = fmt(beat * player.spb) + ' / ' + fmt(player.total * player.spb);
+    $('#progress').value = pv; $('#clock').textContent = ck; $('#fsProg').value = pv; $('#fsClock').textContent = ck;
     // cursor na partitura
     const cols = st.lay.cols; let lo = 0, hi = cols.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (cols[mid].t <= tw + 1e-6) lo = mid; else hi = mid - 1; }
     const c = cols[lo]; if (c && (lo !== st.prevCol || force)) {
       st.prevCol = lo; const sy = st.lay.systems[c.sys]; const cur = $('#cursor'); const sp = st.sp;
       cur.setAttribute('x', c.x - 1.2 * sp); cur.setAttribute('width', 2.4 * sp); cur.setAttribute('y', sy.top + 0.8 * sp); cur.setAttribute('height', sy.bottom - sy.top - 1.6 * sp);
       st.onEls.forEach(e => e.classList.remove('on')); st.onEls = [...document.querySelectorAll('.c' + c.mi + '_' + c.i)]; st.onEls.forEach(e => e.classList.add('on'));
-      const wrap = $('#scoreWrap'); const want = sy.top - 10; if (player.playing || force) { if (wrap.scrollHeight > wrap.clientHeight && (want < wrap.scrollTop || sy.bottom > wrap.scrollTop + wrap.clientHeight)) wrap.scrollTop = want; }
+      if (c.sys !== st.prevSys || force) { st.prevSys = c.sys; const wrap = $('#scoreWrap'); const want = Math.max(0, sy.top - 1.2 * sp); if (Math.abs(wrap.scrollTop - want) > 2) wrap.scrollTop = want; }
     }
     fb.update(tw, dt || .016, player.spb);
   }
@@ -126,6 +128,19 @@
   $('#leftHand').addEventListener('change', () => frame(true));
   $('#camMode').addEventListener('change', () => { prefs.camMode = $('#camMode').value; savePrefs(); fb.setCamMode($('#camMode').value); frame(true); });
   $('#screenMode').addEventListener('change', () => { const v = $('#screenMode').value; $('#guitarStage').classList.toggle('hidden', v === 'score'); $('#scoreStage').classList.toggle('hidden', v === 'guitar'); $('#chordBar').style.display = v === 'guitar' ? 'none' : ''; fb.resize(); if (st.arr) frame(true); });
+  /* modo 16:9 em tela cheia (útil no celular deitado) */
+  function setPresent(on) {
+    const s = $('#scoreStage'); s.classList.toggle('present', on); document.body.style.overflow = on ? 'hidden' : '';
+    try {
+      if (on) { const rq = s.requestFullscreen || s.webkitRequestFullscreen; if (rq) Promise.resolve(rq.call(s)).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => { }); }
+      else { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => { }); if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); }
+    } catch (e) { }
+    setTimeout(() => { if (st.arr) { drawScoreAndChords(); frame(true); } }, 160);
+  }
+  $('#presentBtn').onclick = () => setPresent(true); $('#fsExit').onclick = () => setPresent(false);
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && $('#scoreStage').classList.contains('present')) setPresent(false); });
+  $('#fsPlay').onclick = () => $('#playBtn').click();
+  $('#fsProg').oninput = e => { player.seek(player.total * Number(e.target.value) / 1000); fb.reset(); fb.idx = 0; frame(true); };
   $('#openHymns').onclick = () => { $('#hymnModal').classList.add('show'); setTimeout(() => $('#hymnSearch').focus(), 50); };
   $('#hymnSearch').oninput = e => renderCatalog(e.target.value.trim());
   $('#settingsBtn').onclick = () => $('#options').classList.toggle('open');
