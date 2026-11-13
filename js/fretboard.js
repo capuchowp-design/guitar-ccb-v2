@@ -54,7 +54,7 @@
     /* câmera */
     fullCam() { const s = Math.min(this.W * .96 / 1075, this.H * .95 / 545); return { cx: -318, cy: 22, s }; }
     camTarget() {
-      const full = this.fullCam(); if (this.camMode !== 'follow') return full;
+      const full = this.fullCam(); if (this.camMode !== 'follow' && !this.forceFollow) return full;
       const reg = this.reg || { lo: 1, hi: 5 }; const dLo = D(Math.max(0, reg.lo - 1.3)), dHi = D(reg.hi + .9);
       const minVW = this.W < 600 ? 230 : 400; const vw = Math.max(minVW, (dHi - dLo) * 1.3 + 70);
       return { cx: -(dLo + dHi) / 2, cy: -22, s: clamp(this.W / vw, full.s, 5.2) };
@@ -125,7 +125,7 @@
       this.drawBody(x, s); this.drawNeck(x, s);
       // números das casas (relativos ao capotraste, como na "casa" da legenda)
       x.font = `600 ${(12 / s).toFixed(2)}px system-ui,sans-serif`; x.textAlign = 'center'; x.fillStyle = 'rgba(216,193,140,.9)';
-      for (let n = capo + 1; n <= 19; n++) { const cd = (D(n - 1) + D(n)) / 2; const gap = (D(n) - D(n - 1)) * s; const step = gap < 17 ? 2 : 1; if ((n - capo) % step) continue; x.fillText(String(n - capo), -cd, fbh(cd) + 15 / s + 1); }
+      for (let n = capo + 1; n <= 19; n++) { const cd = (D(n - 1) + D(n)) / 2; const gap = (D(n) - D(n - 1)) * s; const step = Math.max(1, Math.ceil(17 / gap)); if ((n - capo) % step) continue; x.fillText(String(n - capo), -cd, fbh(cd) + 15 / s + 1); }
       // cordas
       const px = v => v / s; const base = [1.5, 1.8, 2.2, 2.7, 3.2, 3.7].map(w => w * (nylon ? 1 : .9)); const wk = .8 + .2 * clamp(s / 1.2, .5, 1.8);
       for (let si = 0; si < 6; si++) {
@@ -152,7 +152,7 @@
       // mão direita (p i m a)
       for (let k = 0; k < 4; k++) {
         const r = this.rh[k], d = RH_D[k]; const ts = (rt - r.rt0); const dip = ts >= 0 && ts < .26 ? Math.sin(Math.PI * Math.min(1, ts / .26)) : 0;
-        const rr = clamp(9.5 / s, 6.2, 9.5); const ty = SY(r.s, d) - rr * 1.9 + dip * rr * 1.7; if (r.y === null) r.y = ty; r.y += (ty - r.y) * .35;
+        const rr = clamp(9 / s, 6.2, 10); const ty = SY(r.s, d) - rr * 1.9 + dip * rr * 1.7; if (r.y === null) r.y = ty; r.y += (ty - r.y) * .35;
         this.bubble(x, -d, r.y, rr, RH_COL[k], RH_NAME[k], 1);
       }
       // mão esquerda (1 2 3 4)
@@ -160,7 +160,7 @@
         if (f.a < .02) return; const af = capo + f.f; const dp = D(af) - (D(af) - D(af - 1)) * .3; const tx = -dp, ty = SY(f.s, dp);
         if (f.px === null) { f.px = tx; f.py = ty; }
         f.px += (tx - f.px) * (f.on ? .45 : .1); f.py += (ty - f.py) * (f.on ? .45 : .1);
-        this.bubble(x, f.px, f.py, clamp(10.5 / s, 7, 10.5), LH_COL[k], String(k + 1), Math.min(1, f.a * 1.05));
+        this.bubble(x, f.px, f.py, clamp(11 / s, 7, 13), LH_COL[k], String(k + 1), Math.min(1, f.a * 1.05));
       });
       x.restore();
       // legenda

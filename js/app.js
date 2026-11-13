@@ -94,14 +94,14 @@
   }
 
   /* ---------- reprodução / animação ---------- */
-  function play() { if (!st.arr) return; player.setVolume(Number($('#volume').value) / 100); player.play(); $('#playBtn').textContent = $('#fsPlay').textContent = 'Ⅱ'; loop(); }
-  function pause() { if (player.playing) player.pause(); $('#playBtn').textContent = $('#fsPlay').textContent = '▶'; cancelAnimationFrame(st.raf); }
-  player.onEnd = () => { $('#playBtn').textContent = $('#fsPlay').textContent = '▶'; frame(true); };
+  function play() { if (!st.arr) return; player.setVolume(Number($('#volume').value) / 100); player.play(); $('#playBtn').textContent = 'Ⅱ'; setFsPlay('Ⅱ'); loop(); }
+  function pause() { if (player.playing) player.pause(); $('#playBtn').textContent = '▶'; setFsPlay('▶'); cancelAnimationFrame(st.raf); }
+  player.onEnd = () => { $('#playBtn').textContent = '▶'; setFsPlay('▶'); frame(true); };
   function loop() { cancelAnimationFrame(st.raf); const t = performance.now(); const dt = Math.min(.1, (t - st.lastFrame) / 1000 || .016); st.lastFrame = t; frame(false, dt); if (player.playing) st.raf = requestAnimationFrame(loop); }
   function frame(force, dt) {
     if (!st.arr) return; const beat = player.beat; const tw = player.writtenT(beat);
     const pv = player.total ? Math.round(beat / player.total * 1000) : 0; const ck = fmt(beat * player.spb) + ' / ' + fmt(player.total * player.spb);
-    $('#progress').value = pv; $('#clock').textContent = ck; $('#fsProg').value = pv; $('#fsClock').textContent = ck;
+    $('#progress').value = pv; $('#clock').textContent = ck; document.querySelectorAll('.fsProg').forEach(e => e.value = pv); document.querySelectorAll('.fsClock').forEach(e => e.textContent = ck);
     // cursor na partitura
     const cols = st.lay.cols; let lo = 0, hi = cols.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (cols[mid].t <= tw + 1e-6) lo = mid; else hi = mid - 1; }
     const c = cols[lo]; if (c && (lo !== st.prevCol || force)) {
@@ -128,19 +128,22 @@
   $('#leftHand').addEventListener('change', () => frame(true));
   $('#camMode').addEventListener('change', () => { prefs.camMode = $('#camMode').value; savePrefs(); fb.setCamMode($('#camMode').value); frame(true); });
   $('#screenMode').addEventListener('change', () => { const v = $('#screenMode').value; $('#guitarStage').classList.toggle('hidden', v === 'score'); $('#scoreStage').classList.toggle('hidden', v === 'guitar'); $('#chordBar').style.display = v === 'guitar' ? 'none' : ''; fb.resize(); if (st.arr) frame(true); });
-  /* modo 16:9 em tela cheia (útil no celular deitado) */
-  function setPresent(on) {
-    const s = $('#scoreStage'); s.classList.toggle('present', on); document.body.style.overflow = on ? 'hidden' : '';
+  /* modo 16:9 em tela cheia (violão ou partitura), útil no celular deitado */
+  const setFsPlay = txt => document.querySelectorAll('.fsPlay').forEach(b => b.textContent = txt);
+  function setPresent(id, on) {
+    document.querySelectorAll('.stage.present').forEach(s => s.classList.remove('present'));
+    const s = id && $('#' + id); if (on && s) s.classList.add('present'); document.body.style.overflow = on ? 'hidden' : '';
     try {
-      if (on) { const rq = s.requestFullscreen || s.webkitRequestFullscreen; if (rq) Promise.resolve(rq.call(s)).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => { }); }
+      if (on && s) { const rq = s.requestFullscreen || s.webkitRequestFullscreen; if (rq) Promise.resolve(rq.call(s)).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => { }); }
       else { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => { }); if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); }
     } catch (e) { }
-    setTimeout(() => { if (st.arr) { drawScoreAndChords(); frame(true); } }, 160);
+    setTimeout(() => { fb.forceFollow = !!(on && id === 'guitarStage' && Math.min(innerWidth, innerHeight * 16 / 9) < 900); fb.resize(); if (st.arr) { drawScoreAndChords(); frame(true); } }, 160);
   }
-  $('#presentBtn').onclick = () => setPresent(true); $('#fsExit').onclick = () => setPresent(false);
-  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && $('#scoreStage').classList.contains('present')) setPresent(false); });
-  $('#fsPlay').onclick = () => $('#playBtn').click();
-  $('#fsProg').oninput = e => { player.seek(player.total * Number(e.target.value) / 1000); fb.reset(); fb.idx = 0; frame(true); };
+  document.querySelectorAll('.presentBtn').forEach(b => b.onclick = () => setPresent(b.dataset.target, true));
+  document.querySelectorAll('.fsExit').forEach(b => b.onclick = () => setPresent(null, false));
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.querySelector('.stage.present')) setPresent(null, false); });
+  document.querySelectorAll('.fsPlay').forEach(b => b.onclick = () => $('#playBtn').click());
+  document.querySelectorAll('.fsProg').forEach(b => b.oninput = e => { player.seek(player.total * Number(e.target.value) / 1000); fb.reset(); fb.idx = 0; frame(true); });
   $('#openHymns').onclick = () => { $('#hymnModal').classList.add('show'); setTimeout(() => $('#hymnSearch').focus(), 50); };
   $('#hymnSearch').oninput = e => renderCatalog(e.target.value.trim());
   $('#settingsBtn').onclick = () => $('#options').classList.toggle('open');
