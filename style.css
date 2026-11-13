@@ -29,8 +29,8 @@ button,select,input{font:inherit}button{background:var(--panel2);border:1px soli
 .stagehead{display:flex;align-items:center;justify-content:space-between;gap:8px}.stagehead h3{margin:2px 0 9px}.mini{padding:5px 10px;font-size:12px;margin-bottom:6px;white-space:nowrap}
 .fsbar{display:none}
 @media(max-width:760px) and (orientation:portrait){.staff{aspect-ratio:4/3}.stagehead h3{font-size:12px}}
-#scoreStage.present{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;padding:8px;padding-top:max(8px,env(safe-area-inset-top));margin:0}
-#scoreStage.present .stagehead,#scoreStage.present .footnote{display:none}
-#scoreStage.present .staff{aspect-ratio:16/9;width:min(100%,calc((100vh - 66px)*16/9));width:min(100%,calc((100dvh - 66px)*16/9));max-height:calc(100vh - 66px);max-height:calc(100dvh - 66px);margin:0 auto;border-radius:8px}
-#scoreStage.present .fsbar{display:flex;gap:8px;align-items:center;margin:8px auto 0;width:min(100%,calc((100vh - 66px)*16/9));width:min(100%,calc((100dvh - 66px)*16/9))}
+.stage.present{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;padding:8px;padding-top:max(8px,env(safe-area-inset-top));margin:0}
+.stage.present .stagehead,.stage.present .footnote{display:none}
+.stage.present .staff,.stage.present .neck{aspect-ratio:16/9;height:auto;width:min(100%,calc((100vh - 66px)*16/9));width:min(100%,calc((100dvh - 66px)*16/9));max-height:calc(100vh - 66px);max-height:calc(100dvh - 66px);margin:0 auto;border-radius:8px}
+.stage.present .fsbar{display:flex;gap:8px;align-items:center;margin:8px auto 0;width:min(100%,calc((100vh - 66px)*16/9));width:min(100%,calc((100dvh - 66px)*16/9))}
 .fsbar input{flex:1;accent-color:var(--gold)}.fsbar button{padding:8px 14px}
