@@ -195,9 +195,10 @@
       // corda solta: anel "0" antes da pestana (como o "o" dos diagramas de acordes)
       const chips = [];
       if (v.k !== 'right') this.ob.forEach((o, si) => {
-        if (o.a < .02) return; const rr = clamp(9.5 / s, 5.2, 9.5); const off = 16 + (si % 2) * (rr * 2.1); let wx, wy;   // cordas vizinhas ficam alternadas para não se sobrepor
-        if (capo > 0) { const d = Math.max(3, D(capo) - off); wx = -d; wy = SY(si, d); }
-        else { const px = si >= 3 ? 40 + (5 - si) * 42 : 40 + si * 42, py = (si >= 3 ? -1 : 1) * (31 + 6 * Math.min(1, px / 150) - 7), q = off / px; wx = off; wy = SY(si, 0) + (py - SY(si, 0)) * q; }
+        if (o.a < .02) return; const rr = clamp(9.5 / s, 5.2, 9.5);
+        // o "0" fica SEMPRE sobre a própria corda, na primeira casa livre; se a câmera estiver mais adiante, encosta na borda visível do braço
+        const hw = Math.max(20, (W / 2 - 20) / s - rr); let d = D(capo) + (D(capo + 1) - D(capo)) * .5 + (si % 2) * rr * 2.1;
+        d = Math.max(3, clamp(d, -cam.cx - hw, -cam.cx + hw)); const wx = -d, wy = SY(si, d);
         const dx = wx - cam.cx, dy = wy - cam.cy, ca = Math.cos(cam.a), sa = Math.sin(cam.a); const sx = v.x + W / 2 + s * (dx * ca - dy * sa), sy = v.y + H / 2 + s * (dx * sa + dy * ca);
         if (sx < v.x + 14 || sx > v.x + W - 14 || sy < v.y + 14 || sy > v.y + H - 14) { chips.push({ si, sx, sy, a: o.a }); return; }
         this.openRing(x, wx, wy, rr, o.a, s);
